@@ -157,7 +157,264 @@ Note: The Typescript tests spawn an instance of the sandbox to test against, and
 
 ---
 
-## Scripts
+---
+
+# 🔐 ZK Qualified Signature - POC
+
+This repository has been extended with a **Zero-Knowledge Qualified Signature** proof-of-concept that demonstrates:
+
+- **PAdES signature verification** in zero-knowledge using Noir circuits
+- **Artifact binding** to prevent document/ciphertext substitution
+- **Trust list enforcement** via Merkle tree membership proofs
+- **Encrypted exchange** with AES-GCM + ECDH key agreement
+- **Protocol manifests** for complete verification traceability
+
+## 🏛 Architecture
+
+### Components
+
+1. **Noir Circuit** (`circuits/pades_ecdsa/`)
+   - ECDSA P-256 signature verification
+   - Merkle tree membership proof (SHA-256 based, depth 8)
+   - Document and artifact binding via public inputs
+
+2. **Merkle Toolchain** (`tools/merkle/`)
+   - Trust list builder: `yarn merkle:build allowlist.json --out out`
+   - Proof retriever: `yarn merkle:prove --fingerprint <hex> --out <file>`
+
+3. **Scripts** (`scripts/`)
+   - `hash-byte-range.ts` - Extract PDF /ByteRange SHA-256
+   - `extract-cms.ts` - Parse CMS/CAdES signature data
+   - `encrypt-upload.ts` - AES-GCM encryption with doc_hash AAD
+   - `decrypt.ts` - Decrypt and verify AAD binding
+   - `prove.ts` - Generate ZK proof with all bindings
+   - `verify.ts` - 5-step verification (manifest, binding, trust, ZK)
+   - `e2e-test.ts` - End-to-end test suite
+
+### Binding & Trust
+
+The system enforces three types of binding:
+
+#### 1. **Document Binding**
+- Public input: `doc_hash` (SHA-256 of PDF /ByteRange)
+- Proves: Signature is over the exact document bytes
+- Attack prevented: Cannot swap documents while reusing signature
+
+#### 2. **Artifact Binding**
+- Public input: `artifact_hash` (SHA-256 of ciphertext)
+- Proves: Proof is for the specific encrypted artifact
+- Attack prevented: Cannot substitute ciphertext after proof generation
+- Enforcement: AES-GCM AAD = `doc_hash` (binds plaintext to encryption)
+
+#### 3. **Identity Binding (Trust List)**
+- Public inputs: `signer_fpr` (cert fingerprint), `tl_root` (Merkle root)
+- Private inputs: `merkle_path`, `index` (inclusion proof)
+- Proves: Signer is in the authorized allow-list
+- Attack prevented: Unauthorized signers cannot generate valid proofs
+
+### Protocol Manifest
+
+Each proof generates a `manifest.json` containing:
+
+```json
+{
+  "version": 1,
+  "doc_hash": "<sha256-hex>",
+  "artifact": {
+    "type": "cipher",
+    "artifact_hash": "<sha256-hex>"
+  },
+  "signer": {
+    "pub_x": "<hex32>",
+    "pub_y": "<hex32>",
+    "fingerprint": "<sha256-cert>"
+  },
+  "tl_root": "<hex>",
+  "proof": "<base64>",
+  "timestamp": "<iso8601>"
+}
+```
+
+The manifest enables complete verification:
+- Artifact hash comparison (tamper detection)
+- Trust list validation (authorized signer check)
+- Proof verification (ZK validity)
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+- Node.js 22.15.0
+- Noir/Nargo (installed via Aztec)
+- Sample PAdES-signed PDF
+
+### Setup
+
+```bash
+# Install dependencies
+yarn install
+
+# Compile Noir circuit
+cd circuits/pades_ecdsa && nargo compile && cd ../..
+
+# Create trust list
+# Edit allowlist.json with your certificate fingerprints
+yarn merkle:build allowlist.json --out out
+```
+
+### End-to-End Flow
+
+```bash
+# 1. Extract document hash from signed PDF
+yarn hash-byte-range sample_signed.pdf
+# Output: out/doc_hash.bin, out/doc_hash.hex
+
+# 2. Extract CMS signature and public key
+yarn extract-cms sample_signed.pdf
+# Output: out/VERIFIED_pubkey.json, out/VERIFIED_sig.json
+
+# 3. Encrypt file with AAD binding
+yarn encrypt-upload sample.pdf --to out/VERIFIED_pubkey.json
+# Output: out/encrypted-file.bin, out/cipher_hash.bin
+
+# 4. Generate ZK proof (auto-loads all inputs)
+yarn prove
+# Output: out/proof.bin, out/manifest.json
+
+# 5. Verify proof with all bindings
+yarn verify
+# Checks: artifact hash, trust list, ZK proof validity
+```
+
+### Run Tests
+
+```bash
+# Full E2E test (positive + tamper detection)
+yarn e2e-test
+```
+
+## 📊 Security Properties
+
+### What the ZK Proof Guarantees
+
+✅ **Signature Validity**: A valid ECDSA P-256 signature exists over `doc_hash`
+✅ **Authorized Signer**: Signer is in the trusted allow-list (Merkle proof)
+✅ **Zero-Knowledge**: Signature itself is never revealed
+✅ **Artifact Binding**: Proof is cryptographically bound to the specific ciphertext
+✅ **Document Binding**: Signature and encryption are both bound to the same document
+
+### Attack Prevention
+
+| Attack | Prevention Mechanism |
+|--------|---------------------|
+| Document substitution | ECDSA verifies `doc_hash` in circuit |
+| Ciphertext swap | `artifact_hash` public input |
+| Unauthorized signer | Merkle membership proof |
+| Plaintext-ciphertext mismatch | AES-GCM AAD = `doc_hash` |
+| Replay attacks | Timestamp in manifest |
+
+## 🗂 File Structure
+
+```
+.
+├── circuits/pades_ecdsa/        # Noir ZK circuit
+│   └── src/main.nr              # ECDSA + Merkle verification
+├── tools/merkle/                # Trust list toolchain
+│   ├── build.ts                 # Build Merkle tree
+│   └── prove.ts                 # Get inclusion proof
+├── scripts/                     # Workflow scripts
+│   ├── hash-byte-range.ts       # PDF hash extraction
+│   ├── extract-cms.ts           # CMS signature parsing
+│   ├── encrypt-upload.ts        # AES-GCM encryption
+│   ├── decrypt.ts               # AES-GCM decryption
+│   ├── prove.ts                 # ZK proof generation
+│   ├── verify.ts                # Multi-step verification
+│   └── e2e-test.ts              # End-to-end tests
+├── allowlist.json               # Trust list (cert fingerprints)
+└── out/                         # Generated artifacts
+    ├── doc_hash.bin             # Document hash
+    ├── cipher_hash.bin          # Artifact hash
+    ├── tl_root.hex              # Merkle root
+    ├── paths/*.json             # Merkle proofs
+    ├── proof.bin                # ZK proof
+    ├── manifest.json            # Protocol manifest
+    └── encrypted-file.bin       # Encrypted artifact
+```
+
+## 📝 Available Commands
+
+### Core Workflow
+
+```bash
+yarn hash-byte-range <pdf>               # Extract ByteRange hash
+yarn extract-cms <pdf>                   # Parse CMS signature
+yarn merkle:build <allowlist> --out dir  # Build trust list
+yarn encrypt-upload <file> --to <pubkey> # Encrypt with binding
+yarn prove                               # Generate ZK proof
+yarn verify                              # Verify proof + bindings
+yarn e2e-test                            # Run full test suite
+```
+
+### Merkle Toolchain
+
+```bash
+yarn merkle:build allowlist.json --out out
+  # Generates: out/tl_root.hex, out/paths/*.json
+
+yarn merkle:prove --fingerprint <hex> --out proof.json
+  # Retrieves inclusion proof for specific cert
+```
+
+## 📚 Technical Details
+
+### Circuit Parameters
+
+- **Merkle tree depth**: 8 (supports 256 signers)
+- **Hash function**: SHA-256 (both Merkle and bindings)
+- **Curve**: ECDSA P-256 (secp256r1)
+- **Proof system**: UltraHonk (via Barretenberg)
+
+### Encryption Scheme
+
+- **Key agreement**: ECDH with P-256
+- **KDF**: HKDF-SHA256
+- **Encryption**: AES-256-GCM
+- **AAD**: `doc_hash` (binds plaintext to ciphertext)
+
+### Certificate Fingerprint
+
+Computed as `SHA-256(certificate-DER)`:
+
+```bash
+openssl x509 -in cert.pem -outform DER | openssl dgst -sha256 -hex
+```
+
+## 🔬 Development Status
+
+**Current**: Task 2 Complete (100%)
+- ✅ Circuit with binding and trust list
+- ✅ Merkle toolchain
+- ✅ Enhanced prover/verifier
+- ✅ Protocol manifest
+- ✅ Encryption hardening
+- ✅ E2E tests
+- ✅ Documentation
+
+**Known Limitations**:
+- PAdES-T (timestamped) signatures require full CAdES library
+- Merkle tree uses SHA-256 (could optimize to Poseidon2 for smaller proofs)
+- IPFS integration ready but uses local files by default
+
+## 📖 References
+
+- [PAdES Specification (ETSI EN 319 142)](https://www.etsi.org/deliver/etsi_en/319100_319199/31914201/01.01.01_60/en_31914201v010101p.pdf)
+- [CMS/CAdES (RFC 5652)](https://datatracker.ietf.org/doc/html/rfc5652)
+- [Noir Language Docs](https://noir-lang.org/)
+- [Aztec Protocol](https://docs.aztec.network/)
+
+---
+
+## Scripts (Original Aztec Starter)
 
 You can find a handful of scripts in the `./scripts` folder.
 

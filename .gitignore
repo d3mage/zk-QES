@@ -6,4 +6,7 @@ log/
 .DS_Store
 codegenCache.json
 store/
-.tsbuildinfo
+.tsbuildinfoout/
+*.bin
+*.hex
+store/
