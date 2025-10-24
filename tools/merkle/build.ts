@@ -72,11 +72,11 @@ function buildMerkleTree(leaves: bigint[]): {
         throw new Error('Cannot build tree from empty leaves');
     }
 
-    // Pad to power of 2
-    const depth = Math.ceil(Math.log2(leaves.length));
-    const paddedSize = Math.pow(2, depth);
+    // Pad to exactly 256 leaves (depth 8) to match circuit
+    const CIRCUIT_DEPTH = 8;
+    const paddedSize = Math.pow(2, CIRCUIT_DEPTH);  // 256 leaves
 
-    // Pad with zeros (or last leaf repeated)
+    // Pad with zeros
     const paddedLeaves = [...leaves];
     while (paddedLeaves.length < paddedSize) {
         paddedLeaves.push(0n);

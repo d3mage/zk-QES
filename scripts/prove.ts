@@ -12,7 +12,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { Noir } from '@noir-lang/noir_js';
-import { UltraHonkBackend as BarretenbergBackend } from '@aztec/bb.js';
+import { UltraPlonkBackend as BarretenbergBackend } from '@aztec/bb.js';
 
 interface ProofInputs {
     doc_hash: Uint8Array;
@@ -20,9 +20,9 @@ interface ProofInputs {
     pub_key_x: Uint8Array;
     pub_key_y: Uint8Array;
     signer_fpr: Uint8Array;
-    tl_root: string; // Field as decimal string
+    tl_root: Uint8Array; // SHA-256 hash (32 bytes)
     signature: Uint8Array;
-    merkle_path: string[]; // Array of Field values as decimal strings
+    merkle_path: number[][]; // Array of byte arrays (each 32 bytes)
     index: string; // Field as decimal string
 }
 
@@ -38,6 +38,13 @@ async function loadInputs(): Promise<ProofInputs> {
     if (doc_hash.length !== 32) {
         throw new Error(`Invalid doc_hash length: ${doc_hash.length} (expected 32)`);
     }
+
+    // TEMP: CAdES signatures sign over signedAttrs, not doc_hash directly
+    // Use signed_attrs_hash for ECDSA verification
+    const signedAttrsHashPath = path.join(outDir, 'VERIFIED_signed_attrs_hash.bin');
+    const message_for_sig = fs.existsSync(signedAttrsHashPath)
+        ? new Uint8Array(fs.readFileSync(signedAttrsHashPath))
+        : doc_hash;
 
     // 2. Read artifact hash (ciphertext or CID hash)
     // For now, use the cipher hash if it exists, otherwise use doc_hash as placeholder
@@ -76,15 +83,22 @@ async function loadInputs(): Promise<ProofInputs> {
     const crypto = await import('node:crypto');
     const { execSync } = await import('node:child_process');
 
-    // Extract DER from PEM
+    // Extract DER from PEM - properly extract only the base64 between BEGIN and END
     const certPem = fs.readFileSync(certPath, 'utf-8');
-    const certDer = Buffer.from(
-        certPem
-            .replace(/-----BEGIN CERTIFICATE-----/, '')
-            .replace(/-----END CERTIFICATE-----/, '')
-            .replace(/\s/g, ''),
-        'base64'
-    );
+    const beginMarker = '-----BEGIN CERTIFICATE-----';
+    const endMarker = '-----END CERTIFICATE-----';
+    const beginIndex = certPem.indexOf(beginMarker);
+    const endIndex = certPem.indexOf(endMarker);
+
+    if (beginIndex === -1 || endIndex === -1) {
+        throw new Error('Invalid PEM format: missing BEGIN or END marker');
+    }
+
+    const base64Content = certPem
+        .substring(beginIndex + beginMarker.length, endIndex)
+        .replace(/\s/g, '');
+
+    const certDer = Buffer.from(base64Content, 'base64');
 
     const signer_fpr = crypto.createHash('sha256').update(certDer).digest();
 
@@ -94,7 +108,7 @@ async function loadInputs(): Promise<ProofInputs> {
         throw new Error(`Trust list root not found: ${tlRootPath}. Run 'yarn merkle:build' first.`);
     }
     const tlRootHex = fs.readFileSync(tlRootPath, 'utf-8').trim();
-    const tl_root = BigInt('0x' + tlRootHex).toString();
+    const tl_root = new Uint8Array(Buffer.from(tlRootHex, 'hex'));
 
     // Find the Merkle proof for this signer
     const proofPath = path.join(outDir, 'paths', `${signer_fpr.toString('hex')}.json`);
@@ -105,9 +119,12 @@ async function loadInputs(): Promise<ProofInputs> {
     const proofData = JSON.parse(fs.readFileSync(proofPath, 'utf-8'));
 
     // Convert path from hex to Field decimal strings (pad to 8 elements)
-    const merkle_path = proofData.path.map((hex: string) => BigInt('0x' + hex).toString());
+    const merkle_path = proofData.path.map((hex: string) => {
+        const bytes = Buffer.from(hex, 'hex');
+        return Array.from(new Uint8Array(bytes));
+    });
     while (merkle_path.length < 8) {
-        merkle_path.push('0'); // Pad with zeros
+        merkle_path.push(Array(32).fill(0)); // Pad with zero bytes
     }
 
     const index = proofData.index.toString();
@@ -129,7 +146,7 @@ async function loadInputs(): Promise<ProofInputs> {
     }
 
     return {
-        doc_hash,
+        doc_hash: message_for_sig,  // TEMP: Use signed_attrs_hash for ECDSA verification
         artifact_hash,
         pub_key_x,
         pub_key_y,
@@ -170,7 +187,7 @@ async function main() {
     console.log(`  pub_key_x:    ${Buffer.from(inputs.pub_key_x).toString('hex')}`);
     console.log(`  pub_key_y:    ${Buffer.from(inputs.pub_key_y).toString('hex')}`);
     console.log(`  signer_fpr:   ${Buffer.from(inputs.signer_fpr).toString('hex')}`);
-    console.log(`  tl_root:      ${BigInt(inputs.tl_root).toString(16)}`);
+    console.log(`  tl_root:      ${Buffer.from(inputs.tl_root).toString('hex')}`);
     console.log(`  index:        ${inputs.index}`);
     console.log(`  signature:    ${Buffer.from(inputs.signature).toString('hex')}`);
 
@@ -191,7 +208,7 @@ async function main() {
         pub_key_x: Array.from(inputs.pub_key_x),
         pub_key_y: Array.from(inputs.pub_key_y),
         signer_fpr: Array.from(inputs.signer_fpr),
-        tl_root: inputs.tl_root,
+        tl_root: Array.from(inputs.tl_root),
         signature: Array.from(inputs.signature),
         merkle_path: inputs.merkle_path,
         index: inputs.index
@@ -240,7 +257,7 @@ async function main() {
             pub_y: Buffer.from(inputs.pub_key_y).toString('hex'),
             fingerprint: Buffer.from(inputs.signer_fpr).toString('hex')
         },
-        tl_root: BigInt(inputs.tl_root).toString(16).padStart(64, '0'),
+        tl_root: Buffer.from(inputs.tl_root).toString('hex'),
         proof: Buffer.from(proof.proof).toString('base64'),
         timestamp: new Date().toISOString(),
         notes: 'Generated by prove.ts'
@@ -255,6 +272,9 @@ async function main() {
     console.log(`  Manifest: ${manifestPath}`);
 
     console.log('\n✓ Proof generation complete!');
+
+    // Explicitly exit to prevent hanging due to Barretenberg handles
+    process.exit(0);
 }
 
 main().catch(err => {

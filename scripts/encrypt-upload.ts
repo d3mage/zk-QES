@@ -13,7 +13,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { create as createIpfsClient } from 'ipfs-http-client';
+// import { create as createIpfsClient } from 'ipfs-http-client';
 
 interface RecipientPubKey {
     x: string;  // hex
@@ -105,7 +105,7 @@ function deriveSharedSecret(
 function kdf(sharedSecret: Buffer, salt: Buffer = Buffer.alloc(0)): Buffer {
     // Simple KDF using HKDF-SHA256
     // Derive 32 bytes for AES-256
-    return crypto.hkdfSync('sha256', sharedSecret, salt, 'aes-256-gcm-key', 32);
+    return Buffer.from(crypto.hkdfSync('sha256', sharedSecret, salt, 'aes-256-gcm-key', 32));
 }
 
 async function uploadToIpfs(data: Buffer): Promise<string> {
@@ -243,7 +243,12 @@ async function main() {
 }
 
 main().catch(err => {
-    console.error('Error:', err.message);
-    console.error(err.stack);
+    console.error('Error:', err);
+    if (err && err.message) {
+        console.error('Message:', err.message);
+    }
+    if (err && err.stack) {
+        console.error('Stack:', err.stack);
+    }
     process.exit(1);
 });

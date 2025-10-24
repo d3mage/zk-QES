@@ -11,7 +11,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { UltraHonkBackend as BarretenbergBackend } from '@aztec/bb.js';
+import { UltraPlonkBackend as BarretenbergBackend } from '@aztec/bb.js';
 
 interface Manifest {
     version: number;

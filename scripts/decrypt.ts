@@ -14,7 +14,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { create as createIpfsClient } from 'ipfs-http-client';
+// import { create as createIpfsClient } from 'ipfs-http-client';
 
 interface EncryptedPackage {
     cid: string;
@@ -71,7 +71,7 @@ function deriveSharedSecret(
 }
 
 function kdf(sharedSecret: Buffer, salt: Buffer = Buffer.alloc(0)): Buffer {
-    return crypto.hkdfSync('sha256', sharedSecret, salt, 'aes-256-gcm-key', 32);
+    return Buffer.from(crypto.hkdfSync('sha256', sharedSecret, salt, 'aes-256-gcm-key', 32));
 }
 
 async function fetchFromIpfs(cid: string): Promise<Buffer> {

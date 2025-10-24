@@ -10,11 +10,11 @@ fn main(
     pub_key_x: pub [u8; 32],          // Public key X coordinate (big-endian)
     pub_key_y: pub [u8; 32],          // Public key Y coordinate (big-endian)
     signer_fpr: pub [u8; 32],         // SHA-256(cert-der)
-    tl_root: pub Field,               // Merkle root of allowed signers
+    tl_root: pub [u8; 32],            // Merkle root of allowed signers (SHA-256 hash)
 
     // Private inputs
     signature: [u8; 64],              // Signature (r || s, big-endian)
-    merkle_path: [Field; 8],          // Merkle inclusion path (depth 8 = 256 leaves max)
+    merkle_path: [[u8; 32]; 8],       // Merkle inclusion path (depth 8 = 256 leaves max)
     index: Field                      // Leaf index in the tree
 ) {
     // 1. Verify ECDSA P-256 signature over doc_hash
@@ -23,15 +23,15 @@ fn main(
 
     // 2. Verify signer is in the allow-list (Merkle tree)
     // Compute expected root from leaf and path using SHA-256
-    let computed_root_bytes = compute_merkle_root_sha256(signer_fpr, index, merkle_path);
-    let computed_root = bytes_to_field(computed_root_bytes);
+    let computed_root = compute_merkle_root_sha256(signer_fpr, index, merkle_path);
 
+    // Compare byte arrays directly
     assert(computed_root == tl_root, "Signer not in allow-list");
 
     // 3. artifact_hash is public and bound to the proof
     // Binding is enforced by making it a public input
     // The verifier must check that artifact_hash matches the actual ciphertext/CID hash
-    let _artifact_binding = bytes_to_field(artifact_hash); // Ensure it's used in witness generation
+    // No explicit constraint needed - public input provides the binding
 }
 
 // Helper: convert 32-byte array to Field (big-endian interpretation)
@@ -55,14 +55,13 @@ fn bytes_to_field(bytes: [u8; 32]) -> Field {
 fn compute_merkle_root_sha256(
     leaf: [u8; 32],
     index: Field,
-    path: [Field; 8]
+    path: [[u8; 32]; 8]
 ) -> [u8; 32] {
     let mut current = leaf;
     let mut idx = index;
 
     for i in 0..8 {
-        let sibling_field = path[i];
-        let sibling = field_to_bytes(sibling_field);
+        let sibling = path[i];
 
         // Determine if current is left or right child
         // index bit determines position: 0 = left, 1 = right

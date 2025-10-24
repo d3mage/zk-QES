@@ -37,8 +37,8 @@ async function main() {
 
     // Prerequisites
     console.log('📋 Checking Prerequisites...');
-    verifyFile('sample_signed.pdf', 'Sample signed PDF');
-    verifyFile('sample.pdf', 'Sample unsigned PDF');
+    verifyFile('test_files/sample_signed.pdf', 'Sample signed PDF');
+    verifyFile('test_files/sample.pdf', 'Sample unsigned PDF');
     console.log('');
 
     // Test 1: Full Pipeline
@@ -46,18 +46,18 @@ async function main() {
     console.log('TEST 1: Complete Pipeline');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
-    run('yarn hash-byte-range sample_signed.pdf', 'Extract ByteRange hash');
+    run('yarn hash-byte-range -- test_files/sample_signed.pdf', 'Extract ByteRange hash');
     verifyFile('out/doc_hash.bin', 'Document hash');
     verifyFile('out/doc_hash.hex', 'Document hash (hex)');
 
-    run('yarn extract-cms sample_signed.pdf', 'Extract CMS signature');
+    run('yarn extract-cms -- test_files/sample_signed.pdf test_files/EU-6669243D2B04331D0400000014EB9900F741B404.cer', 'Extract CMS signature');
     verifyFile('out/VERIFIED_pubkey.json', 'Public key');
     verifyFile('out/VERIFIED_sig.json', 'Signature');
 
-    run('yarn merkle:build allowlist.json --out out', 'Build Merkle tree');
+    run('yarn merkle:build -- allowlist.json --out out', 'Build Merkle tree');
     verifyFile('out/tl_root.hex', 'Trust list root');
 
-    run('yarn encrypt-upload sample.pdf --to out/VERIFIED_pubkey.json', 'Encrypt file');
+    run('yarn encrypt-upload -- test_files/sample.pdf --to out/VERIFIED_pubkey.json', 'Encrypt file');
     verifyFile('out/cipher_hash.bin', 'Cipher hash');
     verifyFile('out/encrypted-file.bin', 'Encrypted file');
 
