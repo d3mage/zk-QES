@@ -10,25 +10,38 @@ fn main(
     pub_key_x: pub [u8; 32],          // Public key X coordinate (big-endian)
     pub_key_y: pub [u8; 32],          // Public key Y coordinate (big-endian)
     signer_fpr: pub [u8; 32],         // SHA-256(cert-der)
-    tl_root: pub [u8; 32],            // Merkle root of allowed signers (SHA-256 hash)
+    tl_root: pub [u8; 32],            // Merkle root of local allow-list (SHA-256 hash)
+
+    // EU Trust List support (optional, Task 3)
+    eu_trust_enabled: pub bool,       // Feature flag for EU trust verification
+    tl_root_eu: pub [u8; 32],         // Merkle root of EU qualified CAs
 
     // Private inputs
     signature: [u8; 64],              // Signature (r || s, big-endian)
-    merkle_path: [[u8; 32]; 8],       // Merkle inclusion path (depth 8 = 256 leaves max)
-    index: Field                      // Leaf index in the tree
+    merkle_path: [[u8; 32]; 8],       // Merkle inclusion path for local allow-list (depth 8)
+    index: Field,                     // Leaf index in local tree
+    eu_merkle_path: [[u8; 32]; 8],    // Merkle inclusion path for EU trust list
+    eu_index: Field                   // Leaf index in EU tree
 ) {
     // 1. Verify ECDSA P-256 signature over doc_hash
     let valid = verify_signature(pub_key_x, pub_key_y, signature, doc_hash);
     assert(valid, "ECDSA P-256 verification failed");
 
-    // 2. Verify signer is in the allow-list (Merkle tree)
+    // 2. Verify signer is in the local allow-list (Merkle tree)
     // Compute expected root from leaf and path using SHA-256
     let computed_root = compute_merkle_root_sha256(signer_fpr, index, merkle_path);
 
     // Compare byte arrays directly
-    assert(computed_root == tl_root, "Signer not in allow-list");
+    assert(computed_root == tl_root, "Signer not in local allow-list");
 
-    // 3. artifact_hash is public and bound to the proof
+    // 3. Optional: Verify signer is also in EU Trust List
+    // This provides dual trust verification: local allowlist AND EU qualified status
+    if eu_trust_enabled {
+        let computed_eu_root = compute_merkle_root_sha256(signer_fpr, eu_index, eu_merkle_path);
+        assert(computed_eu_root == tl_root_eu, "Signer not in EU Trust List");
+    }
+
+    // 4. artifact_hash is public and bound to the proof
     // Binding is enforced by making it a public input
     // The verifier must check that artifact_hash matches the actual ciphertext/CID hash
     // No explicit constraint needed - public input provides the binding
