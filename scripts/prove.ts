@@ -5,8 +5,11 @@
  * Generates a Noir proof for ECDSA P-256 signature verification.
  * Reads inputs from out/ directory and creates a ZK proof.
  *
- * Usage: yarn prove
- *   or: yarn prove --hash <hash-file> --sig <sig-file> --pub <pubkey-file>
+ * Usage: yarn prove                  # Local trust list only
+ *        yarn prove --eu-trust       # Enable EU Trust List verification
+ *
+ * Flags:
+ *   --eu-trust    Enable dual trust verification (local allowlist + EU Trust List)
  */
 
 import fs from 'node:fs';
@@ -21,9 +24,58 @@ interface ProofInputs {
     pub_key_y: Uint8Array;
     signer_fpr: Uint8Array;
     tl_root: Uint8Array; // SHA-256 hash (32 bytes)
+    eu_trust_enabled: boolean; // Feature flag for EU trust verification
+    tl_root_eu: Uint8Array; // EU Trust List Merkle root (32 bytes)
     signature: Uint8Array;
     merkle_path: number[][]; // Array of byte arrays (each 32 bytes)
     index: string; // Field as decimal string
+    eu_merkle_path: number[][]; // EU Trust List Merkle path (8 x 32 bytes)
+    eu_index: string; // EU tree leaf index
+}
+
+interface EUTrustData {
+    tl_root_eu: Uint8Array;
+    eu_merkle_path: number[][];
+    eu_index: string;
+}
+
+function loadEUTrustData(signerFingerprint: string): EUTrustData {
+    const outDir = 'out';
+
+    // Load EU Trust List root
+    const euRootPath = path.join(outDir, 'tl_root_eu.hex');
+    if (!fs.existsSync(euRootPath)) {
+        throw new Error(`EU Trust List root not found: ${euRootPath}. Run 'yarn eutl:fetch' and 'yarn eutl:root' first.`);
+    }
+    const euRootHex = fs.readFileSync(euRootPath, 'utf-8').trim();
+    const tl_root_eu = new Uint8Array(Buffer.from(euRootHex, 'hex'));
+
+    // Load EU Merkle proof for this signer
+    const euProofPath = path.join(outDir, 'eu_paths', `${signerFingerprint}.json`);
+    if (!fs.existsSync(euProofPath)) {
+        throw new Error(`EU Merkle proof not found: ${euProofPath}\nSigner fingerprint: ${signerFingerprint}\nRun 'yarn eutl:root' to generate EU proofs.`);
+    }
+
+    const euProofData = JSON.parse(fs.readFileSync(euProofPath, 'utf-8'));
+
+    // Convert EU path from hex to byte arrays (use 'siblings' field)
+    const eu_merkle_path = euProofData.siblings.map((hex: string) => {
+        const bytes = Buffer.from(hex, 'hex');
+        return Array.from(new Uint8Array(bytes));
+    });
+
+    // Ensure exactly 8 elements (should already be 8 from eutl/root.ts)
+    while (eu_merkle_path.length < 8) {
+        eu_merkle_path.push(Array(32).fill(0));
+    }
+
+    const eu_index = euProofData.index.toString();
+
+    return {
+        tl_root_eu,
+        eu_merkle_path,
+        eu_index
+    };
 }
 
 async function loadInputs(): Promise<ProofInputs> {
@@ -145,6 +197,24 @@ async function loadInputs(): Promise<ProofInputs> {
         throw new Error(`Invalid signature length: ${signature.length} (expected 64)`);
     }
 
+    // 7. Check for --eu-trust flag and load EU Trust List data
+    const euTrustEnabled = process.argv.includes('--eu-trust');
+    let euTrustData: EUTrustData;
+
+    if (euTrustEnabled) {
+        console.log('EU Trust verification enabled, loading EU Trust List data...');
+        euTrustData = loadEUTrustData(signer_fpr.toString('hex'));
+        console.log(`  EU root:  ${Buffer.from(euTrustData.tl_root_eu).toString('hex')}`);
+        console.log(`  EU index: ${euTrustData.eu_index}`);
+    } else {
+        // Provide zero values when EU trust is disabled (backward compatibility)
+        euTrustData = {
+            tl_root_eu: new Uint8Array(32), // zeros
+            eu_merkle_path: Array(8).fill(Array(32).fill(0)),
+            eu_index: '0'
+        };
+    }
+
     return {
         doc_hash: message_for_sig,  // TEMP: Use signed_attrs_hash for ECDSA verification
         artifact_hash,
@@ -152,9 +222,13 @@ async function loadInputs(): Promise<ProofInputs> {
         pub_key_y,
         signer_fpr: new Uint8Array(signer_fpr),
         tl_root,
+        eu_trust_enabled: euTrustEnabled,
+        tl_root_eu: euTrustData.tl_root_eu,
         signature,
         merkle_path,
-        index
+        index,
+        eu_merkle_path: euTrustData.eu_merkle_path,
+        eu_index: euTrustData.eu_index
     };
 }
 
@@ -188,6 +262,11 @@ async function main() {
     console.log(`  pub_key_y:    ${Buffer.from(inputs.pub_key_y).toString('hex')}`);
     console.log(`  signer_fpr:   ${Buffer.from(inputs.signer_fpr).toString('hex')}`);
     console.log(`  tl_root:      ${Buffer.from(inputs.tl_root).toString('hex')}`);
+    console.log(`  eu_trust:     ${inputs.eu_trust_enabled ? 'ENABLED' : 'disabled'}`);
+    if (inputs.eu_trust_enabled) {
+        console.log(`  tl_root_eu:   ${Buffer.from(inputs.tl_root_eu).toString('hex')}`);
+        console.log(`  eu_index:     ${inputs.eu_index}`);
+    }
     console.log(`  index:        ${inputs.index}`);
     console.log(`  signature:    ${Buffer.from(inputs.signature).toString('hex')}`);
 
@@ -209,9 +288,13 @@ async function main() {
         pub_key_y: Array.from(inputs.pub_key_y),
         signer_fpr: Array.from(inputs.signer_fpr),
         tl_root: Array.from(inputs.tl_root),
+        eu_trust_enabled: inputs.eu_trust_enabled,
+        tl_root_eu: Array.from(inputs.tl_root_eu),
         signature: Array.from(inputs.signature),
         merkle_path: inputs.merkle_path,
-        index: inputs.index
+        index: inputs.index,
+        eu_merkle_path: inputs.eu_merkle_path,
+        eu_index: inputs.eu_index
     };
 
     console.log('\nGenerating witness...');
@@ -245,7 +328,7 @@ async function main() {
     fs.writeFileSync(vkeyPath, vkey);
 
     // Generate protocol manifest
-    const manifest = {
+    const manifest: any = {
         version: 1,
         doc_hash: Buffer.from(inputs.doc_hash).toString('hex'),
         artifact: {
@@ -262,6 +345,19 @@ async function main() {
         timestamp: new Date().toISOString(),
         notes: 'Generated by prove.ts'
     };
+
+    // Add EU trust information if enabled
+    if (inputs.eu_trust_enabled) {
+        manifest.eu_trust = {
+            enabled: true,
+            tl_root_eu: Buffer.from(inputs.tl_root_eu).toString('hex'),
+            eu_index: inputs.eu_index
+        };
+    } else {
+        manifest.eu_trust = {
+            enabled: false
+        };
+    }
 
     fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
 
