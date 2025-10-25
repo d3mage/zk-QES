@@ -38,6 +38,7 @@
     "merkle:prove": "node --loader ts-node/esm tools/merkle/prove.ts",
     "eutl:fetch": "node --loader ts-node/esm tools/eutl/fetch.ts",
     "eutl:root": "node --loader ts-node/esm tools/eutl/root.ts",
+    "pades:certify": "node --loader ts-node/esm scripts/pades-certify.ts",
     "e2e-test": "node --loader ts-node/esm scripts/e2e-test.ts",
     "test": "yarn test:js && yarn test:nr",
     "test::testnet": "AZTEC_ENV=testnet yarn test:js",
