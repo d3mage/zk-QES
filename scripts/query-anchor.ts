@@ -1,5 +1,5 @@
 import { AztecAnchorContract } from "../src/artifacts/AztecAnchor.js";
-import { createLogger, PXE, Fr } from "@aztec/aztec.js";
+import { createLogger, PXE, Fr, AztecAddress } from "@aztec/aztec.js";
 import { setupPXE } from "../src/utils/setup_pxe.js";
 import { getAccountFromEnv } from "../src/utils/create_account_from_env.js";
 import * as fs from "fs";
@@ -65,14 +65,16 @@ Examples:
     const wallet = await accountManager.getWallet();
 
     const contract = await AztecAnchorContract.at(
-        Fr.fromString(contractAddressStr),
+        AztecAddress.fromString(contractAddressStr),
         wallet
     );
 
     // Show count if requested
     if (showCount) {
         try {
-            const count = await contract.methods.get_proof_count().simulate();
+            const count = await contract.methods.get_proof_count().simulate({
+                from: wallet.getAddress()
+            });
             logger.info('');
             logger.info(`📊 Total proofs anchored: ${count}`);
             logger.info('');
@@ -113,7 +115,9 @@ Examples:
         // Check if proof exists
         const exists = await contract.methods
             .get_proof_exists(doc_hash_array, signer_fpr_array)
-            .simulate();
+            .simulate({
+                from: wallet.getAddress()
+            });
 
         if (exists) {
             logger.info('✅ Proof found on-chain!');
@@ -122,7 +126,9 @@ Examples:
             // Get proof ID
             const proof_id = await contract.methods
                 .get_proof_id_for(doc_hash_array, signer_fpr_array)
-                .simulate();
+                .simulate({
+                    from: wallet.getAddress()
+                });
 
             logger.info('  Proof Data:');
             logger.info(`    Proof ID:     ${proof_id.toString()}`);

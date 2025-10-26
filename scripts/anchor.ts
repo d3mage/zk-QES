@@ -1,7 +1,9 @@
 import { AztecAnchorContract } from "../src/artifacts/AztecAnchor.js";
-import { createLogger, PXE, Logger, Fr } from "@aztec/aztec.js";
+import { createLogger, PXE, Logger, Fr, AztecAddress, SponsoredFeePaymentMethod } from "@aztec/aztec.js";
 import { setupPXE } from "../src/utils/setup_pxe.js";
 import { getAccountFromEnv } from "../src/utils/create_account_from_env.js";
+import { getSponsoredFPCInstance } from "../src/utils/sponsored_fpc.js";
+import { SponsoredFPCContract } from "@aztec/noir-contracts.js/SponsoredFPC";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -9,7 +11,7 @@ interface Manifest {
     version: number;
     doc_hash: string;
     artifact: {
-        hash: string;
+        artifact_hash: string;
     };
     signer: {
         fingerprint: string;
@@ -75,6 +77,12 @@ Options:
     logger.info('📡 Connecting to Aztec PXE...');
     const pxe: PXE = await setupPXE();
 
+    // Setup sponsored FPC
+    logger.info('💰 Setting up sponsored fee payment...');
+    const sponsoredFPC = await getSponsoredFPCInstance();
+    await pxe.registerContract({ instance: sponsoredFPC, artifact: SponsoredFPCContract.artifact });
+    const sponsoredPaymentMethod = new SponsoredFeePaymentMethod(sponsoredFPC.address);
+
     // Get wallet
     logger.info('👤 Loading account from environment...');
     const accountManager = await getAccountFromEnv(pxe);
@@ -82,7 +90,7 @@ Options:
 
     // Parse manifest data
     const doc_hash = Buffer.from(manifest.doc_hash, 'hex');
-    const artifact_hash = Buffer.from(manifest.artifact.hash, 'hex');
+    const artifact_hash = Buffer.from(manifest.artifact.artifact_hash, 'hex');
     const signer_fpr = Buffer.from(manifest.signer.fingerprint, 'hex');
     const tl_root = Buffer.from(manifest.tl_root, 'hex');
 
@@ -117,7 +125,7 @@ Options:
     // Submit transaction
     try {
         const contract = await AztecAnchorContract.at(
-            Fr.fromString(contractAddressStr),
+            AztecAddress.fromString(contractAddressStr),
             wallet
         );
 
@@ -131,7 +139,10 @@ Options:
                 tl_root_eu_array,
                 eu_trust_enabled
             )
-            .send()
+            .send({
+                from: wallet.getAddress(),
+                fee: { paymentMethod: sponsoredPaymentMethod }
+            })
             .wait();
 
         logger.info('');
@@ -141,13 +152,17 @@ Options:
         logger.info('');
 
         // Query proof count
-        const proofCount = await contract.methods.get_proof_count().simulate();
+        const proofCount = await contract.methods.get_proof_count().simulate({
+            from: wallet.getAddress()
+        });
         logger.info(`  Total proofs anchored: ${proofCount}`);
 
         // Compute and display proof_id
         const proof_id = await contract.methods
             .get_proof_id_for(doc_hash_array, signer_fpr_array)
-            .simulate();
+            .simulate({
+                from: wallet.getAddress()
+            });
         logger.info(`  Proof ID: ${proof_id.toString()}`);
 
     } catch (error: any) {
