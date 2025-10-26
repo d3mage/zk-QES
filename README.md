@@ -12,8 +12,7 @@
 
 This project implements a complete zero-knowledge proof of concept for qualified electronic signatures, enabling privacy-preserving verification of eIDAS-qualified signatures without revealing the signature itself.
 
-**Current Status:** ✅ **Tasks 1-4 COMPLETE (100%)**
-**Next:** Task 5 - Aztec On-Chain Verification
+**Current Status:** ✅ **Tasks 1-5 COMPLETE (100%)**
 
 ### Key Features
 - ✅ Zero-knowledge ECDSA P-256 signature verification
@@ -22,6 +21,7 @@ This project implements a complete zero-knowledge proof of concept for qualified
 - ✅ PAdES-T timestamp signatures (RFC-3161)
 - ✅ PAdES-LT long-term validation structure
 - ✅ Encrypted artifact exchange
+- ✅ Aztec on-chain proof registry with privacy
 - ✅ Complete E2E workflow
 
 ---
@@ -417,6 +417,53 @@ yarn pades:certify doc.pdf --policy annotations --out certified_annotate.pdf
 - Okular: Document → Signatures shows certifying signature
 - Policy is enforced: modifications trigger validation warnings
 
+### Aztec On-Chain Proof Anchoring (Task 5)
+
+Anchor ZK proofs on the Aztec blockchain for decentralized verification:
+
+```bash
+# 1. Start Aztec sandbox
+aztec start --sandbox
+
+# 2. Deploy AztecAnchor contract (one-time)
+yarn deploy
+# Output: Contract address saved to out/anchor_contract_address.txt
+
+# 3. Anchor a proof on-chain
+yarn anchor --manifest out/manifest.json
+# Output: Transaction hash, block number, proof ID
+
+# 4. Query anchored proofs
+yarn query-anchor --count
+# Output: Total number of anchored proofs
+
+# 5. Verify specific proof exists on-chain
+yarn query-anchor --doc-hash <hash> --signer-fpr <fingerprint>
+# Output: Proof found confirmation with proof ID
+```
+
+**Key Features:**
+- ✅ On-chain proof registry with Poseidon2 hashing
+- ✅ Privacy-preserving: only stores proof ID (hash of doc_hash + signer_fpr)
+- ✅ Public verification: anyone can query if a proof exists
+- ✅ Sponsored fees: gas-less transactions for users
+- ✅ Immutable audit trail on Aztec L2
+
+**How it works:**
+1. Generate ZK proof locally (as before)
+2. Anchor proof metadata on-chain (doc_hash, artifact_hash, signer_fpr, trust roots)
+3. Contract computes proof_id = poseidon2(doc_hash, signer_fpr)
+4. Anyone can verify proof exists without accessing the actual signature
+
+**Integration with existing workflow:**
+```bash
+# Complete flow with on-chain anchoring
+yarn prove                              # Generate ZK proof
+yarn verify                             # Verify locally
+yarn anchor --manifest out/manifest.json # Anchor on Aztec
+yarn query-anchor --doc-hash <hash> --signer-fpr <fpr> # Verify on-chain
+```
+
 ### Run Tests
 
 ```bash
@@ -465,6 +512,9 @@ yarn e2e-test
 │   ├── prove.ts                 # ZK proof generation (+ EU trust)
 │   ├── verify.ts                # Multi-step verification (6 steps)
 │   ├── pades-certify.ts         # DocMDP certifying signatures
+│   ├── deploy_contract.ts       # Deploy AztecAnchor contract
+│   ├── anchor.ts                # Anchor proof on-chain
+│   ├── query-anchor.ts          # Query anchored proofs
 │   └── e2e-test.ts              # End-to-end tests
 ├── allowlist.json               # Local trust list (cert fingerprints)
 ├── tools/eutl/cache/            # EU Trust List cache
@@ -494,6 +544,10 @@ yarn encrypt-upload <file> --to <pubkey> # Encrypt with binding
 yarn prove                               # Generate ZK proof (local trust)
 yarn prove -- --eu-trust                 # Generate ZK proof (dual trust)
 yarn verify                              # Verify proof + bindings
+yarn deploy                              # Deploy AztecAnchor contract (one-time)
+yarn anchor --manifest <file>            # Anchor proof on Aztec blockchain
+yarn query-anchor --count                # Query total anchored proofs
+yarn query-anchor --doc-hash <h> --signer-fpr <f>  # Query specific proof
 yarn e2e-test                            # Run full test suite
 ```
 
@@ -524,6 +578,25 @@ yarn pades:certify <input.pdf> --policy <no-changes|form-fill|annotations> --out
   # Creates DocMDP certifying signature with specified policy
 ```
 
+### Aztec On-Chain Anchoring (Task 5)
+
+```bash
+yarn deploy
+  # Deploy AztecAnchor contract to Aztec sandbox/testnet
+  # Saves contract address to out/anchor_contract_address.txt
+
+yarn anchor --manifest out/manifest.json
+  # Anchor proof on-chain with doc_hash, artifact_hash, signer fingerprint, and trust roots
+  # Returns: transaction hash, block number, proof ID
+
+yarn query-anchor --count
+  # Query total number of anchored proofs
+
+yarn query-anchor --doc-hash <hex> --signer-fpr <hex>
+  # Verify specific proof exists on-chain
+  # Returns: proof ID, existence confirmation
+```
+
 ### Command Reference Table
 
 | Command | Purpose | Example |
@@ -540,6 +613,9 @@ yarn pades:certify <input.pdf> --policy <no-changes|form-fill|annotations> --out
 | `yarn pades:certify` | Create DocMDP signature | `yarn pades:certify doc.pdf --policy no-changes --out cert.pdf` |
 | `yarn pades:timestamp` | Add RFC-3161 timestamp (PAdES-T) | `yarn pades:timestamp signed.pdf --tsa https://freetsa.org/tsr` |
 | `yarn pades:lt` | Add long-term validation data (PAdES-LT) | `yarn pades:lt timestamped.pdf --out lt.pdf` |
+| `yarn deploy` | Deploy AztecAnchor contract | `yarn deploy` |
+| `yarn anchor` | Anchor proof on-chain | `yarn anchor --manifest out/manifest.json` |
+| `yarn query-anchor` | Query anchored proofs | `yarn query-anchor --count` or `yarn query-anchor --doc-hash <hash> --signer-fpr <fpr>` |
 | `yarn e2e-test` | Run E2E test suite | `yarn e2e-test` |
 
 ## 📚 Technical Details
@@ -568,25 +644,36 @@ openssl x509 -in cert.pem -outform DER | openssl dgst -sha256 -hex
 
 ## 🔬 Development Status
 
-**Current**: Task 3 (90% complete)
-- ✅ Task 1 & 2: Complete (100%)
+**ALL TASKS COMPLETE**: 5/5 (100% ✅)
+
+- ✅ **Task 1 & 2**: Core ZK Proof System (100%)
   - ✅ ECDSA P-256 ZK proofs
   - ✅ Artifact binding
   - ✅ Local trust lists
   - ✅ Protocol manifests
   - ✅ E2E tests
-- ✅ Task 3 Components:
+
+- ✅ **Task 3**: EU Trust List & PAdES (100%)
   - ✅ EU Trust List integration (fetch, Merkle tree)
   - ✅ Dual trust verification (local + EU)
   - ✅ Circuit enhancement with EU trust support
   - ✅ Prover/Verifier integration with `--eu-trust` flag
   - ✅ DocMDP certifying signature structure
-  - ✅ Complete documentation
-  - ✅ PAdES-T (RFC-3161 timestamp signatures with PKI.js)
+  - ✅ PAdES-T (RFC-3161 timestamp signatures)
   - ✅ PAdES-LT (DSS/VRI structure implementation)
 
-**ALL Components Complete**: 8/8 (100% ✅)
-**Task 3 Status**: FULLY COMPLETE
+- ✅ **Task 4**: Documentation & Testing (100%)
+  - ✅ Comprehensive documentation
+  - ✅ Integration test coverage
+  - ✅ Usage examples
+
+- ✅ **Task 5**: Aztec On-Chain Proof Registry (100%)
+  - ✅ AztecAnchor smart contract (Noir)
+  - ✅ Proof anchoring with Poseidon2 hash
+  - ✅ On-chain proof registry with privacy
+  - ✅ Query interface for proof verification
+  - ✅ Sponsored fee payment integration
+  - ✅ Full integration tests
 
 **Known Limitations**:
 - PAdES-T: ✅ Implemented with PKI.js (adds RFC-3161 timestamps)
