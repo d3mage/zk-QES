@@ -2,6 +2,7 @@ node_modules
 target/
 src/artifacts/
 log/
+logs/
 .vscode
 .DS_Store
 codegenCache.json
@@ -15,3 +16,7 @@ store/
 test_files/PROOF_*.pdf
 test_files/sample_*stamped.pdf
 test_files/sample_lt.pdf
+# Environment variables (secrets)
+.env
+.env.local
+.env.*.local
