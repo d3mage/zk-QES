@@ -1,7 +1,7 @@
 import { AztecAnchorContract } from "../src/artifacts/AztecAnchor.js";
 import { createLogger, PXE, Logger, Fr } from "@aztec/aztec.js";
 import { setupPXE } from "../src/utils/setup_pxe.js";
-import { getAccountFromFile } from "../src/utils/deploy_account.js";
+import { getAccountFromEnv } from "../src/utils/create_account_from_env.js";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -76,8 +76,9 @@ Options:
     const pxe: PXE = await setupPXE();
 
     // Get wallet
-    logger.info('👤 Loading account...');
-    const wallet = await getAccountFromFile(pxe);
+    logger.info('👤 Loading account from environment...');
+    const accountManager = await getAccountFromEnv(pxe);
+    const wallet = await accountManager.getWallet();
 
     // Parse manifest data
     const doc_hash = Buffer.from(manifest.doc_hash, 'hex');
