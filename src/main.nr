@@ -2,64 +2,98 @@ mod test;
 use dep::aztec::macros::aztec;
 
 #[aztec]
-pub contract PrivateVoting {
+pub contract AztecAnchor {
     use dep::aztec::{
-        keys::getters::get_public_keys,
-        macros::{functions::{initializer, internal, private, public, utility}, storage::storage},
+        macros::{functions::{initializer, public, utility}, storage::storage},
     };
     use dep::aztec::protocol_types::{
-        address::AztecAddress,
         hash::poseidon2_hash,
-        traits::{Hash, ToField},
     };
-    use dep::aztec::state_vars::{Map, PublicImmutable, PublicMutable};
+    use dep::aztec::state_vars::{Map, PublicMutable};
 
     #[storage]
     struct Storage<Context> {
-        admin: PublicMutable<AztecAddress, Context>, // admin can end vote
-        tally: Map<Field, PublicMutable<Field, Context>, Context>, // we will store candidate as key and number of votes as value
-        vote_ended: PublicMutable<bool, Context>, // vote_ended is boolean
-        active_at_block: PublicImmutable<u32, Context>, // when people can start voting
+        // Map from proof_id (hash of doc_hash + signer_fpr) to proof_id (as existence check)
+        proof_registry: Map<Field, PublicMutable<Field, Context>, Context>,
+        proof_count: PublicMutable<Field, Context>,
     }
 
     #[public]
     #[initializer]
-    // annotation to mark function as a constructor
-    fn constructor(admin: AztecAddress) {
-        storage.admin.write(admin);
-        storage.vote_ended.write(false);
-        storage.active_at_block.initialize(context.block_number());
-    }
-
-    #[private]
-    // annotation to mark function as private and expose private context
-    fn cast_vote(candidate: Field) {
-        let msg_sender_nullifier_public_key_message_hash =
-            get_public_keys(context.msg_sender()).npk_m.hash();
-
-        let secret = context.request_nsk_app(msg_sender_nullifier_public_key_message_hash); // get secret key of caller of function
-        let nullifier = poseidon2_hash([context.msg_sender().to_field(), secret]); // derive nullifier from sender and secret
-        context.push_nullifier(nullifier);
-        PrivateVoting::at(context.this_address()).add_to_tally_public(candidate).enqueue(
-            &mut context,
-        );
+    fn constructor() {
+        storage.proof_count.write(0);
     }
 
     #[public]
-    #[internal]
-    fn add_to_tally_public(candidate: Field) {
-        assert(storage.vote_ended.read() == false, "Vote has ended"); // assert that vote has not ended
-        let new_tally = storage.tally.at(candidate).read() + 1;
-        storage.tally.at(candidate).write(new_tally);
+    fn anchor_proof(
+        doc_hash: [u8; 32],
+        artifact_hash: [u8; 32],
+        signer_fpr: [u8; 32],
+        tl_root: [u8; 32],
+        tl_root_eu: [u8; 32],
+        eu_trust_enabled: bool,
+    ) {
+        // Compute proof_id from doc_hash and signer_fpr using Poseidon2
+        let mut doc_hash_field: Field = 0;
+        for i in 0..32 {
+            doc_hash_field = doc_hash_field * 256 + doc_hash[i] as Field;
+        }
+
+        let mut signer_fpr_field: Field = 0;
+        for i in 0..32 {
+            signer_fpr_field = signer_fpr_field * 256 + signer_fpr[i] as Field;
+        }
+
+        let proof_id = poseidon2_hash([doc_hash_field, signer_fpr_field]);
+
+        // Store proof_id as existence indicator
+        storage.proof_registry.at(proof_id).write(proof_id);
+
+        // Increment count
+        let current_count = storage.proof_count.read();
+        storage.proof_count.write(current_count + 1);
+
+        // Note: Additional fields (artifact_hash, tl_root, tl_root_eu, eu_trust_enabled)
+        // are passed as parameters but not stored in this simplified version.
+        // In production, you'd create additional storage maps for these fields.
     }
 
-    #[public]
-    fn end_vote() {
-        assert(storage.admin.read().eq(context.msg_sender()), "Only admin can end votes"); // assert that caller is admin
-        storage.vote_ended.write(true);
-    }
     #[utility]
-    unconstrained fn get_vote(candidate: Field) -> Field {
-        storage.tally.at(candidate).read()
+    unconstrained fn get_proof_exists(doc_hash: [u8; 32], signer_fpr: [u8; 32]) -> bool {
+        // Compute proof_id
+        let mut doc_hash_field: Field = 0;
+        for i in 0..32 {
+            doc_hash_field = doc_hash_field * 256 + doc_hash[i] as Field;
+        }
+
+        let mut signer_fpr_field: Field = 0;
+        for i in 0..32 {
+            signer_fpr_field = signer_fpr_field * 256 + signer_fpr[i] as Field;
+        }
+
+        let proof_id = poseidon2_hash([doc_hash_field, signer_fpr_field]);
+        let stored_id = storage.proof_registry.at(proof_id).read();
+        stored_id == proof_id
+    }
+
+    #[utility]
+    unconstrained fn get_proof_count() -> Field {
+        storage.proof_count.read()
+    }
+
+    #[utility]
+    unconstrained fn get_proof_id_for(doc_hash: [u8; 32], signer_fpr: [u8; 32]) -> Field {
+        // Compute proof_id
+        let mut doc_hash_field: Field = 0;
+        for i in 0..32 {
+            doc_hash_field = doc_hash_field * 256 + doc_hash[i] as Field;
+        }
+
+        let mut signer_fpr_field: Field = 0;
+        for i in 0..32 {
+            signer_fpr_field = signer_fpr_field * 256 + signer_fpr[i] as Field;
+        }
+
+        poseidon2_hash([doc_hash_field, signer_fpr_field])
     }
 }

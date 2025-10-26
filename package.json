@@ -41,6 +41,8 @@
     "pades:certify": "node --loader ts-node/esm scripts/pades-certify.ts",
     "pades:timestamp": "node --loader ts-node/esm scripts/pades-timestamp.ts",
     "pades:lt": "node --loader ts-node/esm scripts/pades-lt.ts",
+    "anchor": "node --loader ts-node/esm scripts/anchor.ts",
+    "query-anchor": "node --loader ts-node/esm scripts/query-anchor.ts",
     "e2e-test": "node --loader ts-node/esm scripts/e2e-test.ts",
     "test": "yarn test:js && yarn test:nr",
     "test::testnet": "AZTEC_ENV=testnet yarn test:js",

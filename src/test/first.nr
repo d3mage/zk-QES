@@ -1,94 +1,67 @@
 use crate::test::utils;
-use dep::aztec::protocol_types::storage::map::derive_storage_slot_in_map;
-
-use crate::PrivateVoting;
+use crate::AztecAnchor;
 
 #[test]
 unconstrained fn test_initializer() {
-    let (mut env, voting_contract_address, admin) = utils::setup();
+    let (mut env, anchor_contract_address, _admin) = utils::setup();
 
-    env.public_context_at(voting_contract_address, |context| {
-        let current_admin = context.storage_read(PrivateVoting::storage_layout().admin.slot);
-        assert_eq(current_admin, admin);
+    env.public_context_at(anchor_contract_address, |context| {
+        let count = context.storage_read(AztecAnchor::storage_layout().proof_count.slot);
+        assert_eq(count, 0);
     });
 }
 
 #[test]
-unconstrained fn test_check_vote_status() {
-    let (mut env, voting_contract_address, _) = utils::setup();
+unconstrained fn test_anchor_proof() {
+    let (mut env, anchor_contract_address, admin) = utils::setup();
 
-    env.public_context_at(voting_contract_address, |context| {
-        let vote_ended = context.storage_read(PrivateVoting::storage_layout().vote_ended.slot);
-        assert_eq(vote_ended, false);
+    let doc_hash: [u8; 32] = [1; 32];
+    let artifact_hash: [u8; 32] = [2; 32];
+    let signer_fpr: [u8; 32] = [3; 32];
+    let tl_root: [u8; 32] = [4; 32];
+    let tl_root_eu: [u8; 32] = [5; 32];
+    let eu_trust_enabled = true;
+
+    env.call_public(
+        admin,
+        AztecAnchor::at(anchor_contract_address)
+            .anchor_proof(doc_hash, artifact_hash, signer_fpr, tl_root, tl_root_eu, eu_trust_enabled),
+    );
+
+    env.public_context_at(anchor_contract_address, |context| {
+        let count = context.storage_read(AztecAnchor::storage_layout().proof_count.slot);
+        assert_eq(count, 1);
     });
 }
 
 #[test]
-unconstrained fn test_end_vote() {
-    let (env, voting_contract_address, admin) = utils::setup();
+unconstrained fn test_multiple_anchors() {
+    let (mut env, anchor_contract_address, admin) = utils::setup();
 
-    env.call_public(admin, PrivateVoting::at(voting_contract_address).end_vote());
+    let doc_hash1: [u8; 32] = [1; 32];
+    let doc_hash2: [u8; 32] = [2; 32];
+    let artifact_hash: [u8; 32] = [3; 32];
+    let signer_fpr: [u8; 32] = [4; 32];
+    let tl_root: [u8; 32] = [5; 32];
+    let tl_root_eu: [u8; 32] = [6; 32];
+    let eu_trust_enabled = true;
 
-    env.public_context_at(voting_contract_address, |context| {
-        let vote_ended = context.storage_read(PrivateVoting::storage_layout().vote_ended.slot);
-        assert_eq(vote_ended, true);
+    // Anchor first proof
+    env.call_public(
+        admin,
+        AztecAnchor::at(anchor_contract_address)
+            .anchor_proof(doc_hash1, artifact_hash, signer_fpr, tl_root, tl_root_eu, eu_trust_enabled),
+    );
+
+    // Anchor second proof
+    env.call_public(
+        admin,
+        AztecAnchor::at(anchor_contract_address)
+            .anchor_proof(doc_hash2, artifact_hash, signer_fpr, tl_root, tl_root_eu, eu_trust_enabled),
+    );
+
+    env.public_context_at(anchor_contract_address, |context| {
+        let count = context.storage_read(AztecAnchor::storage_layout().proof_count.slot);
+        assert_eq(count, 2);
     });
-}
-
-#[test(should_fail_with = "Only admin can end votes")]
-unconstrained fn test_fail_end_vote_by_non_admin() {
-    let (mut env, voting_contract_address, _) = utils::setup();
-    let alice = env.create_light_account();
-
-    env.call_public(alice, PrivateVoting::at(voting_contract_address).end_vote());
-}
-
-#[test]
-unconstrained fn test_cast_vote() {
-    let (mut env, voting_contract_address, _) = utils::setup();
-    let alice = env.create_light_account();
-
-    let candidate = 1;
-    env.call_private(alice, PrivateVoting::at(voting_contract_address).cast_vote(candidate));
-
-    env.public_context_at(voting_contract_address, |context| {
-        let vote_count = context.storage_read(derive_storage_slot_in_map(
-            PrivateVoting::storage_layout().tally.slot,
-            candidate,
-        ));
-        assert_eq(vote_count, 1);
-    });
-}
-
-#[test]
-unconstrained fn test_cast_vote_with_separate_accounts() {
-    let (mut env, voting_contract_address, _) = utils::setup();
-    let alice = env.create_light_account();
-    let bob = env.create_light_account();
-
-    let candidate = 101;
-
-    env.call_private(alice, PrivateVoting::at(voting_contract_address).cast_vote(candidate));
-
-    let _ = env.call_private(bob, PrivateVoting::at(voting_contract_address).cast_vote(candidate));
-
-    env.public_context_at(voting_contract_address, |context| {
-        let vote_count = context.storage_read(derive_storage_slot_in_map(
-            PrivateVoting::storage_layout().tally.slot,
-            candidate,
-        ));
-        assert_eq(vote_count, 2);
-    });
-}
-
-#[test(should_fail_with = "already exists")]
-unconstrained fn test_fail_vote_twice() {
-    let (mut env, voting_contract_address, _) = utils::setup();
-    let alice = env.create_light_account();
-
-    let candidate = 101;
-
-    env.call_private(alice, PrivateVoting::at(voting_contract_address).cast_vote(candidate));
-
-    env.call_private(alice, PrivateVoting::at(voting_contract_address).cast_vote(candidate));
 }
