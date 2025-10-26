@@ -4,7 +4,27 @@
   </a>
 </div>
 
-# Aztec Starter
+# ZK Qualified Signature - Production POC
+
+**A zero-knowledge proof system for qualified electronic signatures with dual trust verification**
+
+## 🎯 Project Overview
+
+This project implements a complete zero-knowledge proof of concept for qualified electronic signatures, enabling privacy-preserving verification of eIDAS-qualified signatures without revealing the signature itself.
+
+**Current Status:** ✅ **Tasks 1-4 COMPLETE (100%)**
+**Next:** Task 5 - Aztec On-Chain Verification
+
+### Key Features
+- ✅ Zero-knowledge ECDSA P-256 signature verification
+- ✅ Dual trust verification (Local + EU Trust List)
+- ✅ Document and artifact binding
+- ✅ PAdES-T timestamp signatures (RFC-3161)
+- ✅ PAdES-LT long-term validation structure
+- ✅ Encrypted artifact exchange
+- ✅ Complete E2E workflow
+
+---
 
 ## Sandbox
 
