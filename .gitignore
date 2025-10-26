@@ -11,3 +11,7 @@ out/
 *.bin
 *.hex
 store/
+# Generated test outputs from PAdES-T/LT
+test_files/PROOF_*.pdf
+test_files/sample_*stamped.pdf
+test_files/sample_lt.pdf
