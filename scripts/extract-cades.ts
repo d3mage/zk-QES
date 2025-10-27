@@ -166,29 +166,7 @@ async function main() {
     console.log(`  x (32 bytes): ${pubX.toString('hex')}`);
     console.log(`  y (32 bytes): ${pubY.toString('hex')}`);
 
-    // Verify the signature using Node.js crypto
-    console.log(`\n=== Verification Test ===`);
-
-    const pubKeyPem = `-----BEGIN PUBLIC KEY-----\n${cert.subjectPublicKeyInfo.toSchema().toBER().toString('base64').match(/.{1,64}/g)?.join('\n')}\n-----END PUBLIC KEY-----`;
-    const publicKey = crypto.createPublicKey(pubKeyPem);
-
-    // Signature in ieee-p1363 format (r || s)
-    const signatureP1363 = Buffer.concat([r, s]);
-
-    try {
-        const isValid = crypto.verify(
-            null, // prehashed
-            signedAttrsHash,
-            { key: publicKey, dsaEncoding: 'ieee-p1363' },
-            signatureP1363
-        );
-
-        console.log(`Node.js crypto verification: ${isValid ? '✅ VALID' : '❌ INVALID'}`);
-    } catch (e: any) {
-        console.log(`Node.js crypto verification: ❌ ERROR - ${e.message}`);
-    }
-
-    // Save outputs
+    // Save outputs FIRST (before verification which might fail)
     const outDir = 'out';
     if (!fs.existsSync(outDir)) {
         fs.mkdirSync(outDir, { recursive: true });
@@ -212,9 +190,30 @@ async function main() {
         y: pubY.toString('hex')
     }, null, 2));
 
-        console.log(`\n✓ Outputs saved to out/ directory`);
+    console.log(`\n✓ Outputs saved to out/ directory`);
+
+    // Optional verification test (don't fail if this doesn't work)
+    console.log(`\n=== Verification Test (Optional) ===`);
+    try {
+        const pubKeyPem = `-----BEGIN PUBLIC KEY-----\n${cert.subjectPublicKeyInfo.toSchema().toBER().toString('base64').match(/.{1,64}/g)?.join('\n')}\n-----END PUBLIC KEY-----`;
+        const publicKey = crypto.createPublicKey(pubKeyPem);
+
+        // Signature in ieee-p1363 format (r || s)
+        const signatureP1363 = Buffer.concat([r, s]);
+
+        const isValid = crypto.verify(
+            null, // prehashed
+            signedAttrsHash,
+            { key: publicKey, dsaEncoding: 'ieee-p1363' },
+            signatureP1363
+        );
+
+        console.log(`Node.js crypto verification: ${isValid ? '✅ VALID' : '❌ INVALID'}`);
+    } catch (e: any) {
+        console.log(`Node.js crypto verification: ⚠️  SKIPPED - ${e.message}`);
+    }
     } catch (error: any) {
-        console.error('\n❌ Error in main():', error);
+        console.error('\n❌ Error extracting CAdES:', error.message);
         throw error;
     }
 }

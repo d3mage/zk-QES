@@ -1,0 +1,7 @@
+[package]
+name = "merkle_builder_poseidon"
+type = "bin"
+authors = [""]
+compiler_version = ">=0.40.0"
+
+[dependencies]

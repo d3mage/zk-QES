@@ -57,9 +57,10 @@ async function main() {
     verifyFile('out/doc_hash.bin', 'Document hash');
     verifyFile('out/doc_hash.hex', 'Document hash (hex)');
 
-    run('yarn extract-cms -- test_files/sample_signed.pdf test_files/EU-6669243D2B04331D0400000014EB9900F741B404.cer', 'Extract CMS signature');
+    run('yarn extract-cades -- test_files/sample_signed.pdf', 'Extract CAdES signature with PKI.js');
     verifyFile('out/VERIFIED_pubkey.json', 'Public key');
     verifyFile('out/VERIFIED_sig.json', 'Signature');
+    verifyFile('out/VERIFIED_signed_attrs_hash.bin', 'Signed attributes hash');
 
     run('yarn merkle:build -- allowlist.json --out out', 'Build Merkle tree');
     verifyFile('out/tl_root.hex', 'Trust list root');

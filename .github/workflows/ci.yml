@@ -1,0 +1,152 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  # Test job - runs E2E tests
+  test:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'yarn'
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Install Nargo
+        run: |
+          curl -L https://raw.githubusercontent.com/noir-lang/noirup/main/install | bash
+          source $HOME/.bashrc
+          noirup -v 1.0.0-beta.3
+
+      - name: Install native bb
+        run: |
+          curl -L https://aztec-bb-artifacts.s3.amazonaws.com/bb-$(uname -m)-$(uname -s) -o bb
+          chmod +x bb
+          sudo mv bb /usr/local/bin/
+
+      - name: Compile Poseidon circuit
+        run: cd circuits/pades_ecdsa_poseidon && $HOME/.nargo/bin/nargo compile
+
+      - name: Compile SHA-256 circuit
+        run: cd circuits/pades_ecdsa && $HOME/.nargo/bin/nargo compile
+
+      - name: Run Poseidon E2E test
+        run: yarn e2e-test-poseidon
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-outputs
+          path: |
+            out/
+            logs/
+
+  # Build job - builds Docker image
+  build:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: zk-qualified-signature:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Benchmark job - runs performance benchmarks
+  benchmark:
+    name: Performance Benchmark
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'yarn'
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Install Nargo
+        run: |
+          curl -L https://raw.githubusercontent.com/noir-lang/noirup/main/install | bash
+          source $HOME/.bashrc
+          noirup -v 1.0.0-beta.3
+
+      - name: Install native bb
+        run: |
+          curl -L https://aztec-bb-artifacts.s3.amazonaws.com/bb-$(uname -m)-$(uname -s) -o bb
+          chmod +x bb
+          sudo mv bb /usr/local/bin/
+
+      - name: Compile circuits
+        run: |
+          cd circuits/pades_ecdsa_poseidon && $HOME/.nargo/bin/nargo compile
+          cd ../pades_ecdsa && $HOME/.nargo/bin/nargo compile
+
+      - name: Run benchmarks
+        run: yarn benchmark
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: benchmarks/
+
+  # Lint job - code quality checks
+  lint:
+    name: Code Quality
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'yarn'
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Check TypeScript types
+        run: npx tsc --noEmit
+
+      - name: Check Noir circuits syntax
+        run: |
+          curl -L https://raw.githubusercontent.com/noir-lang/noirup/main/install | bash
+          source $HOME/.bashrc
+          noirup -v 1.0.0-beta.3
+          cd circuits/pades_ecdsa && $HOME/.nargo/bin/nargo check
+          cd ../pades_ecdsa_poseidon && $HOME/.nargo/bin/nargo check

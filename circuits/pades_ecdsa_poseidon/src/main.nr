@@ -1,9 +1,9 @@
 use dep::std::ecdsa_secp256r1::verify_signature;
-use dep::std::hash::poseidon2::Poseidon2;
 
-// Poseidon2-optimized version of pades_ecdsa circuit
-// Key optimization: Use Poseidon2 (ZK-native hash) for Merkle trees instead of SHA-256
+// Poseidon-optimized version of pades_ecdsa circuit
+// Key optimization: Use Poseidon (ZK-native hash) for Merkle trees instead of SHA-256
 // This reduces constraint count by 30-50% and speeds up proof generation
+// Uses standard Poseidon (compatible with poseidon-lite TypeScript library)
 
 fn main(
     // Document and artifact binding (public, still byte arrays for compatibility)
@@ -15,16 +15,16 @@ fn main(
     pub_key_y: pub [u8; 32],          // Public key Y coordinate (big-endian)
 
     // *** OPTIMIZATION: Merkle-related inputs now use Field instead of [u8; 32] ***
-    signer_fpr: pub Field,            // Signer fingerprint as Field (Poseidon2 leaf)
-    tl_root: pub Field,               // Merkle root of local allow-list (Poseidon2 hash)
+    signer_fpr: pub Field,            // Signer fingerprint as Field (Poseidon leaf)
+    tl_root: pub Field,               // Merkle root of local allow-list (Poseidon hash)
 
-    // EU Trust List support (Poseidon2-based)
+    // EU Trust List support (Poseidon-based)
     eu_trust_enabled: pub bool,       // Feature flag for EU trust verification
-    tl_root_eu: pub Field,            // Merkle root of EU qualified CAs (Poseidon2)
+    tl_root_eu: pub Field,            // Merkle root of EU qualified CAs (Poseidon)
 
-    // Private inputs (Poseidon2-optimized)
+    // Private inputs (Poseidon-optimized)
     signature: [u8; 64],              // Signature (r || s, big-endian)
-    merkle_path: [Field; 8],          // Merkle inclusion path (depth 8, Poseidon2 hashes)
+    merkle_path: [Field; 8],          // Merkle inclusion path (depth 8, Poseidon hashes)
     index: Field,                     // Leaf index in local tree
     eu_merkle_path: [Field; 8],       // Merkle inclusion path for EU trust list
     eu_index: Field                   // Leaf index in EU tree
@@ -34,14 +34,14 @@ fn main(
     let valid = verify_signature(pub_key_x, pub_key_y, signature, doc_hash);
     assert(valid, "ECDSA P-256 verification failed");
 
-    // 2. Verify signer is in the local allow-list (Poseidon2 Merkle tree)
-    // *** OPTIMIZATION: Poseidon2 is 30-50% faster than SHA-256 in circuits ***
-    let computed_root = compute_merkle_root_poseidon2(signer_fpr, index, merkle_path);
+    // 2. Verify signer is in the local allow-list (Poseidon Merkle tree)
+    // *** OPTIMIZATION: Poseidon is 30-50% faster than SHA-256 in circuits ***
+    let computed_root = compute_merkle_root_poseidon(signer_fpr, index, merkle_path);
     assert(computed_root == tl_root, "Signer not in local allow-list");
 
-    // 3. Optional: Verify signer is also in EU Trust List (Poseidon2)
+    // 3. Optional: Verify signer is also in EU Trust List (Poseidon)
     if eu_trust_enabled {
-        let computed_eu_root = compute_merkle_root_poseidon2(signer_fpr, eu_index, eu_merkle_path);
+        let computed_eu_root = compute_merkle_root_poseidon(signer_fpr, eu_index, eu_merkle_path);
         assert(computed_eu_root == tl_root_eu, "Signer not in EU Trust List");
     }
 
@@ -50,9 +50,10 @@ fn main(
     // The verifier must check that artifact_hash matches the actual ciphertext/CID hash
 }
 
-// Compute Merkle root using Poseidon2 (ZK-native hash function)
+// Compute Merkle root using Poseidon (ZK-native hash function)
 // This is significantly more efficient than SHA-256 in ZK circuits
-fn compute_merkle_root_poseidon2(
+// Compatible with poseidon-lite TypeScript library
+fn compute_merkle_root_poseidon(
     leaf: Field,
     index: Field,
     path: [Field; 8]
@@ -66,12 +67,12 @@ fn compute_merkle_root_poseidon2(
         // Determine if current is left or right child
         let is_right = (idx as u64 & 1) as bool;
 
-        // Hash with sibling in correct order using Poseidon2
-        // Poseidon2::hash takes an array of Fields and a length parameter
+        // Hash with sibling in correct order using Poseidon
+        // Uses std::hash::poseidon::bn254::hash_2 (compatible with poseidon-lite)
         current = if is_right {
-            Poseidon2::hash([sibling, current], 2)
+            std::hash::poseidon::bn254::hash_2([sibling, current])
         } else {
-            Poseidon2::hash([current, sibling], 2)
+            std::hash::poseidon::bn254::hash_2([current, sibling])
         };
 
         // Move to next level (divide index by 2)

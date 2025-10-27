@@ -77,8 +77,9 @@ fn compute_merkle_root_sha256(
         let sibling = path[i];
 
         // Determine if current is left or right child
-        // index bit determines position: 0 = left, 1 = right
-        let is_right = (idx as u64 & 1) as bool;
+        // Check if idx is odd by comparing idx/2*2 with idx
+        let idx_div_2 = idx / 2;
+        let is_right = (idx_div_2 * 2) != idx;
 
         // Hash with sibling in correct order
         current = if is_right {
@@ -88,7 +89,7 @@ fn compute_merkle_root_sha256(
         };
 
         // Move to next level (divide index by 2)
-        idx = idx / 2;
+        idx = idx_div_2;
     }
 
     current

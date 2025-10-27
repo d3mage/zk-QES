@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  zk-signature:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: zk-qualified-signature
+    volumes:
+      # Mount test files
+      - ./test_files:/app/test_files:ro
+      # Mount output directory
+      - ./out:/app/out
+      # Mount logs directory
+      - ./logs:/app/logs
+      # Mount benchmarks directory
+      - ./benchmarks:/app/benchmarks
+    environment:
+      - NODE_ENV=production
+      - LOG_LEVEL=info
+    command: yarn prove:bb
+    restart: "no"
+
+  # Benchmark service
+  benchmark:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: zk-signature-benchmark
+    volumes:
+      - ./test_files:/app/test_files:ro
+      - ./out:/app/out
+      - ./logs:/app/logs
+      - ./benchmarks:/app/benchmarks
+    environment:
+      - NODE_ENV=production
+      - LOG_LEVEL=info
+    command: yarn benchmark
+    profiles:
+      - benchmark
+    restart: "no"
+
+  # E2E test service
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: zk-signature-test
+    volumes:
+      - ./test_files:/app/test_files:ro
+      - ./out:/app/out
+      - ./logs:/app/logs
+    environment:
+      - NODE_ENV=test
+      - LOG_LEVEL=debug
+    command: yarn e2e-test-poseidon
+    profiles:
+      - test
+    restart: "no"
