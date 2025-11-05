@@ -20,7 +20,7 @@ This project implements a complete zero-knowledge proof of concept for qualified
 - ✅ Document and artifact binding
 - ✅ PAdES-T timestamp signatures (RFC-3161)
 - ✅ PAdES-LT long-term validation structure
-- ✅ Encrypted artifact exchange
+- ✅ Encrypted artifact exchange (P-256 + Ethereum/secp256k1)
 - ✅ Aztec on-chain proof registry with privacy
 - ✅ Complete E2E workflow
 
@@ -186,7 +186,7 @@ This repository has been extended with a **Zero-Knowledge Qualified Signature** 
 - **PAdES signature verification** in zero-knowledge using Noir circuits
 - **Artifact binding** to prevent document/ciphertext substitution
 - **Trust list enforcement** via Merkle tree membership proofs
-- **Encrypted exchange** with AES-GCM + ECDH key agreement
+- **Encrypted exchange** with AES-GCM + ECDH (P-256 or Ethereum/secp256k1)
 - **Protocol manifests** for complete verification traceability
 
 ## 🏛 Architecture
@@ -205,8 +205,11 @@ This repository has been extended with a **Zero-Knowledge Qualified Signature** 
 3. **Scripts** (`scripts/`)
    - `hash-byte-range.ts` - Extract PDF /ByteRange SHA-256
    - `extract-cms.ts` - Parse CMS/CAdES signature data
-   - `encrypt-upload.ts` - AES-GCM encryption with doc_hash AAD
-   - `decrypt.ts` - Decrypt and verify AAD binding
+   - `encrypt-upload.ts` - AES-GCM encryption with P-256 keys
+   - `encrypt-eth.ts` - AES-GCM encryption with Ethereum keys
+   - `decrypt.ts` - Decrypt P-256 encrypted files
+   - `decrypt-eth.ts` - Decrypt Ethereum encrypted files
+   - `eth-recover-pubkey.ts` - Ethereum key utilities
    - `prove.ts` - Generate ZK proof with all bindings
    - `verify.ts` - 5-step verification (manifest, binding, trust, ZK)
    - `e2e-test.ts` - End-to-end test suite
@@ -540,7 +543,8 @@ yarn e2e-test
 yarn hash-byte-range <pdf>               # Extract ByteRange hash
 yarn extract-cms <pdf>                   # Parse CMS signature
 yarn merkle:build <allowlist> --out dir  # Build local trust list
-yarn encrypt-upload <file> --to <pubkey> # Encrypt with binding
+yarn encrypt-upload <file> --to <pubkey> # Encrypt with P-256 binding
+# OR: yarn encrypt-eth <file> --sender-key <key> --recipient <pubkey>  # Encrypt with Ethereum keys
 yarn prove                               # Generate ZK proof (local trust)
 yarn prove -- --eu-trust                 # Generate ZK proof (dual trust)
 yarn verify                              # Verify proof + bindings
@@ -597,6 +601,46 @@ yarn query-anchor --doc-hash <hex> --signer-fpr <hex>
   # Returns: proof ID, existence confirmation
 ```
 
+### Ethereum Key Encryption (Alternative to P-256)
+
+**New:** Encrypt files using Ethereum wallet keys (secp256k1) instead of ephemeral P-256 keys.
+
+```bash
+# Generate Ethereum key pairs
+yarn eth-recover-pubkey --generate
+  # Creates new Ethereum key pair (address, private key, public key)
+  # Output: out/eth-new-keypair.json
+
+# Derive public key from existing private key
+yarn eth-recover-pubkey --key <private-key-hex>
+  # Extract public key from Ethereum private key
+  # Output: out/eth-pubkey.json
+
+# Encrypt file with Ethereum keys
+yarn encrypt-eth <file> --sender-key <private-key> --recipient <public-key>
+  # Uses ECDH on secp256k1 + AES-256-GCM
+  # Output: out/encrypted-eth-metadata.json, out/encrypted-eth-file.bin
+
+# Decrypt file with Ethereum keys
+yarn decrypt-eth <metadata-json> --key <private-key> --out <output>
+  # Decrypt using recipient's Ethereum private key
+  # Verifies sender/recipient addresses
+
+# Recover public key from message signature
+yarn eth-recover-pubkey --message <msg> --signature <sig>
+  # Extract public key from signed message (useful for MetaMask users)
+  # Output: out/eth-recovered-pubkey.json
+```
+
+**Why use Ethereum encryption?**
+- Use existing Ethereum wallets (MetaMask, hardware wallets)
+- Identity verification via Ethereum addresses
+- Compatible with Ethereum ecosystem
+- Same security as P-256 mode (ECDH + AES-256-GCM)
+- Fully compatible with ZK proof artifact binding
+
+**📖 Full documentation:** See [`ETHEREUM-ENCRYPTION.md`](./ETHEREUM-ENCRYPTION.md) for complete guide, examples, and API reference.
+
 ### Command Reference Table
 
 | Command | Purpose | Example |
@@ -606,7 +650,10 @@ yarn query-anchor --doc-hash <hex> --signer-fpr <hex>
 | `yarn merkle:build` | Build local Merkle tree | `yarn merkle:build allowlist.json --out out` |
 | `yarn eutl:fetch` | Download EU LOTL | `yarn eutl:fetch --out tools/eutl/cache` |
 | `yarn eutl:root` | Build EU Merkle tree | `yarn eutl:root --snapshot ... --out out` |
-| `yarn encrypt-upload` | Encrypt file with AAD | `yarn encrypt-upload file.pdf --to pubkey.json` |
+| `yarn encrypt-upload` | Encrypt file with AAD (P-256) | `yarn encrypt-upload file.pdf --to pubkey.json` |
+| `yarn encrypt-eth` | Encrypt with Ethereum keys | `yarn encrypt-eth file.pdf --sender-key 0x... --recipient 0x04...` |
+| `yarn decrypt-eth` | Decrypt with Ethereum keys | `yarn decrypt-eth metadata.json --key 0x... --out file.pdf` |
+| `yarn eth-recover-pubkey` | Generate/recover Ethereum keys | `yarn eth-recover-pubkey --generate` |
 | `yarn prove` | Generate ZK proof (local) | `yarn prove` |
 | `yarn prove -- --eu-trust` | Generate ZK proof (dual) | `yarn prove -- --eu-trust` |
 | `yarn verify` | Verify proof + bindings | `yarn verify` |
@@ -627,12 +674,28 @@ yarn query-anchor --doc-hash <hex> --signer-fpr <hex>
 - **Curve**: ECDSA P-256 (secp256r1)
 - **Proof system**: UltraHonk (via Barretenberg)
 
-### Encryption Scheme
+### Encryption Schemes
 
-- **Key agreement**: ECDH with P-256
+**Two modes available:**
+
+**1. P-256 Mode (Original):**
+- **Curve**: secp256r1 (P-256)
+- **Key agreement**: ECDH with ephemeral keys
 - **KDF**: HKDF-SHA256
 - **Encryption**: AES-256-GCM
 - **AAD**: `doc_hash` (binds plaintext to ciphertext)
+- **Use case**: Regulatory compliance, government use
+
+**2. Ethereum Mode (New):**
+- **Curve**: secp256k1 (Ethereum/Bitcoin)
+- **Key agreement**: ECDH with wallet keys
+- **KDF**: HKDF-SHA256
+- **Encryption**: AES-256-GCM
+- **AAD**: `doc_hash` (binds plaintext to ciphertext)
+- **Use case**: Ethereum ecosystem, wallet integration
+- **Library**: ethers.js v6.15.0
+
+Both modes provide identical security and are fully compatible with the ZK proof artifact binding system.
 
 ### Certificate Fingerprint
 
