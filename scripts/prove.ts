@@ -19,7 +19,6 @@ import { UltraPlonkBackend as BarretenbergBackend } from '@aztec/bb.js';
 
 interface ProofInputs {
     doc_hash: Uint8Array;
-    artifact_hash: Uint8Array;
     pub_key_x: Uint8Array;
     pub_key_y: Uint8Array;
     signer_fpr: Uint8Array;
@@ -98,21 +97,7 @@ async function loadInputs(): Promise<ProofInputs> {
         ? new Uint8Array(fs.readFileSync(signedAttrsHashPath))
         : doc_hash;
 
-    // 2. Read artifact hash (ciphertext or CID hash)
-    // For now, use the cipher hash if it exists, otherwise use doc_hash as placeholder
-    const cipherHashPath = path.join(outDir, 'cipher_hash.bin');
-    let artifact_hash: Uint8Array;
-    if (fs.existsSync(cipherHashPath)) {
-        artifact_hash = new Uint8Array(fs.readFileSync(cipherHashPath));
-        if (artifact_hash.length !== 32) {
-            throw new Error(`Invalid artifact_hash length: ${artifact_hash.length} (expected 32)`);
-        }
-    } else {
-        console.warn('Warning: cipher_hash.bin not found, using doc_hash as placeholder');
-        artifact_hash = doc_hash;
-    }
-
-    // 3. Read public key - use VERIFIED from PKI.js
+    // 2. Read public key - use VERIFIED from PKI.js
     const pubkeyJsonPath = path.join(outDir, 'VERIFIED_pubkey.json');
     if (!fs.existsSync(pubkeyJsonPath)) {
         throw new Error(`Public key file not found: ${pubkeyJsonPath}. Run 'yarn extract-cms' first.`);
@@ -125,7 +110,7 @@ async function loadInputs(): Promise<ProofInputs> {
         throw new Error(`Invalid public key length`);
     }
 
-    // 4. Compute signer fingerprint (SHA-256 of certificate DER)
+    // 3. Compute signer fingerprint (SHA-256 of certificate DER)
     const certPath = path.join(outDir, 'cms_embedded_cert.pem');
     if (!fs.existsSync(certPath)) {
         throw new Error(`Certificate not found: ${certPath}`);
@@ -154,7 +139,7 @@ async function loadInputs(): Promise<ProofInputs> {
 
     const signer_fpr = crypto.createHash('sha256').update(certDer).digest();
 
-    // 5. Read Merkle tree root and proof
+    // 4. Read Merkle tree root and proof
     const tlRootPath = path.join(outDir, 'tl_root.hex');
     if (!fs.existsSync(tlRootPath)) {
         throw new Error(`Trust list root not found: ${tlRootPath}. Run 'yarn merkle:build' first.`);
@@ -181,7 +166,7 @@ async function loadInputs(): Promise<ProofInputs> {
 
     const index = proofData.index.toString();
 
-    // 6. Read signature - use VERIFIED from PKI.js
+    // 5. Read signature - use VERIFIED from PKI.js
     const sigJsonPath = path.join(outDir, 'VERIFIED_sig.json');
     if (!fs.existsSync(sigJsonPath)) {
         throw new Error(`Signature file not found: ${sigJsonPath}`);
@@ -197,7 +182,7 @@ async function loadInputs(): Promise<ProofInputs> {
         throw new Error(`Invalid signature length: ${signature.length} (expected 64)`);
     }
 
-    // 7. Check for --eu-trust flag and load EU Trust List data
+    // 6. Check for --eu-trust flag and load EU Trust List data
     const euTrustEnabled = process.argv.includes('--eu-trust');
     let euTrustData: EUTrustData;
 
@@ -217,7 +202,6 @@ async function loadInputs(): Promise<ProofInputs> {
 
     return {
         doc_hash: message_for_sig,  // TEMP: Use signed_attrs_hash for ECDSA verification
-        artifact_hash,
         pub_key_x,
         pub_key_y,
         signer_fpr: new Uint8Array(signer_fpr),
@@ -257,7 +241,6 @@ async function main() {
     const inputs = await loadInputs();
 
     console.log(`  doc_hash:     ${Buffer.from(inputs.doc_hash).toString('hex')}`);
-    console.log(`  artifact_hash: ${Buffer.from(inputs.artifact_hash).toString('hex')}`);
     console.log(`  pub_key_x:    ${Buffer.from(inputs.pub_key_x).toString('hex')}`);
     console.log(`  pub_key_y:    ${Buffer.from(inputs.pub_key_y).toString('hex')}`);
     console.log(`  signer_fpr:   ${Buffer.from(inputs.signer_fpr).toString('hex')}`);
@@ -283,7 +266,6 @@ async function main() {
     // Prepare inputs in Noir format
     const noirInputs = {
         doc_hash: Array.from(inputs.doc_hash),
-        artifact_hash: Array.from(inputs.artifact_hash),
         pub_key_x: Array.from(inputs.pub_key_x),
         pub_key_y: Array.from(inputs.pub_key_y),
         signer_fpr: Array.from(inputs.signer_fpr),
@@ -331,10 +313,6 @@ async function main() {
     const manifest: any = {
         version: 1,
         doc_hash: Buffer.from(inputs.doc_hash).toString('hex'),
-        artifact: {
-            type: 'cipher',
-            artifact_hash: Buffer.from(inputs.artifact_hash).toString('hex')
-        },
         signer: {
             pub_x: Buffer.from(inputs.pub_key_x).toString('hex'),
             pub_y: Buffer.from(inputs.pub_key_y).toString('hex'),

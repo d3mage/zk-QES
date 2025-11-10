@@ -44,8 +44,10 @@ bash -i <(curl -s https://install.aztec.network)
 Install the correct version of the Aztec toolkit:
 
 ```bash
-aztec-up 2.0.2
+aztec-up 3.0.0-devnet.4
 ```
+
+**Note:** This project has been upgraded to **Aztec 3.0.0-devnet.4** with full compatibility.
 
 ### Install Dependencies
 
@@ -55,14 +57,38 @@ yarn install
 
 ### Compile Circuits
 
-Compile the Noir ZK circuits:
-
+**For Noir ZK circuit** (pades_ecdsa):
 ```bash
-# Compile main circuit (pades_ecdsa)
+# Compile main circuit
 cd circuits/pades_ecdsa && nargo compile && cd ../..
 
 # Or use the shortcut
 yarn compile:circuit
+```
+
+**For Aztec smart contract:**
+```bash
+# Compile AztecAnchor contract
+aztec-nargo compile
+
+# Output: target/aztec_anchor-AztecAnchor.json
+```
+
+### Run Tests
+
+**For Aztec smart contract tests:**
+```bash
+# Run all contract tests (includes TXE server)
+aztec test
+
+# Expected output:
+# [aztec_anchor] 3 tests passed
+```
+
+**For ZK circuit tests:**
+```bash
+# End-to-end proof generation and verification
+yarn e2e-test
 ```
 
 ### Optional: Start Aztec Sandbox
@@ -594,6 +620,12 @@ openssl x509 -in cert.pem -outform DER | openssl dgst -sha256 -hex
 ## 🔬 Development Status
 
 **ALL TASKS COMPLETE**: 5/5 (100% ✅)
+
+**Latest Update (2025-11-10):** Successfully upgraded to **Aztec 3.0.0-devnet.4**
+- ✅ Contract migration complete
+- ✅ All tests passing (3/3)
+- ✅ Compilation working
+- See [checkpoint-aztec-3.0-upgrade.md](.wip/checkpoints/checkpoint-aztec-3.0-upgrade.md) for details
 
 - ✅ **Task 1 & 2**: Core ZK Proof System (100%)
   - ✅ ECDSA P-256 ZK proofs

@@ -1,7 +1,8 @@
 # ZK Qualified Signature - Production Deployment Guide
 
-**Version:** 1.0.0
-**Last Updated:** October 27, 2025
+**Version:** 2.0.0
+**Last Updated:** November 10, 2025
+**Aztec Version:** 3.0.0-devnet.4
 
 ---
 
@@ -56,55 +57,93 @@ cd zk-qualified-signature
 yarn install
 ```
 
-### 3. Install Nargo (Noir Compiler)
+### 3. Install Aztec (includes Nargo)
 
 ```bash
-curl -L https://raw.githubusercontent.com/noir-lang/noirup/main/install | bash
-source ~/.bashrc
-noirup -v 1.0.0-beta.3
+bash -i <(curl -s https://install.aztec.network)
+aztec-up 3.0.0-devnet.4
 ```
 
-### 4. Compile Circuits
+This installs:
+- `aztec` - Main CLI tool
+- `aztec-nargo` - Noir compiler for Aztec contracts
+- `aztec-wallet` - Wallet management
+- `nargo` - Standard Noir compiler (for ZK circuits)
 
-**For Poseidon circuit:**
+### 4. Compile Contracts and Circuits
+
+**For Aztec smart contract:**
 ```bash
-yarn compile:circuit:poseidon
+aztec-nargo compile
+# Output: target/aztec_anchor-AztecAnchor.json (782 KB)
 ```
 
-**For SHA-256 circuit:**
+**For Noir ZK circuit:**
 ```bash
-cd circuits/pades_ecdsa && nargo compile
+cd circuits/pades_ecdsa && nargo compile && cd ../..
+# Or: yarn compile:circuit
 ```
 
 ### 5. Verify Installation
 
+**Test Aztec contract:**
 ```bash
-# Test Poseidon circuit
-yarn e2e-test-poseidon
+aztec test
+# Expected: [aztec_anchor] 3 tests passed
+```
 
-# Test SHA-256 circuit (requires native bb)
-yarn prove:bb && yarn verify:bb
+**Test ZK circuit:**
+```bash
+yarn e2e-test
 ```
 
 ---
 
+## Aztec Contract Testing
+
+### ✅ Recommended: Use `aztec test`
+
+```bash
+aztec test
+```
+
+This command:
+- Automatically starts TXE (Transaction Execution Environment) server
+- Runs all integration tests
+- Provides full oracle support
+- Cleans up automatically
+
+**Output:**
+```
+[aztec_anchor] Running 3 test functions
+[aztec_anchor] Testing test::first::test_initializer ... ok
+[aztec_anchor] Testing test::first::test_anchor_proof ... ok
+[aztec_anchor] Testing test::first::test_multiple_anchors ... ok
+[aztec_anchor] 3 tests passed
+```
+
+### ❌ Don't Use: `aztec-nargo test`
+
+The `aztec-nargo test` command does **not** start the TXE server, causing integration tests to fail. Use `aztec test` instead.
+
 ## Circuit Selection
 
-### Decision Matrix
+The project includes two components:
 
-| Requirement | SHA-256 | Poseidon |
-|-------------|---------|----------|
-| **SHA-256 compatibility required** | ✅ | ❌ |
-| **Maximum performance** | ❌ | ✅ |
-| **Smallest proofs (2KB vs 21KB)** | ❌ | ✅ |
-| **Fewest constraints (20K vs 327K)** | ❌ | ✅ |
-| **No native bb dependency** | ❌ | ✅ |
-| **NIST standard hash** | ✅ | ❌ |
+### 1. Aztec Smart Contract (On-Chain Anchoring)
 
-### Recommendation
+- **File:** `src/main.nr`
+- **Compiler:** `aztec-nargo compile`
+- **Output:** `target/aztec_anchor-AztecAnchor.json`
+- **Tests:** `aztec test`
+- **Purpose:** On-chain proof registry with privacy
 
-**Use Poseidon** for most deployments (faster, smaller proofs)
-**Use SHA-256** only when SHA-256 compatibility is required
+### 2. Noir ZK Circuit (Proof Generation)
+
+- **File:** `circuits/pades_ecdsa/src/main.nr`
+- **Compiler:** `nargo compile`
+- **Purpose:** ECDSA P-256 signature verification in zero-knowledge
+- **Tests:** `yarn e2e-test`
 
 ---
 
@@ -453,17 +492,17 @@ chmod -R 755 out/ logs/
 ### Commands Quick Reference
 
 ```bash
+# Aztec Contract
+aztec-nargo compile     # Compile contract
+aztec test              # Run tests (with TXE)
+
+# ZK Circuit
+nargo compile           # Compile circuit
+yarn e2e-test           # End-to-end test
+
 # Proof generation
-yarn prove:bb      # SHA-256 with native bb
-yarn prove         # Poseidon with bb.js (deprecated for SHA-256)
-
-# Verification
-yarn verify:bb     # SHA-256
-yarn verify        # Poseidon
-
-# Testing
-yarn e2e-test-poseidon  # Poseidon E2E test
-yarn benchmark          # Performance benchmark
+yarn prove              # Generate ZK proof
+yarn verify             # Verify ZK proof
 
 # Docker
 docker-compose up       # Run default service
@@ -474,6 +513,13 @@ docker-compose down     # Stop services
 ---
 
 ## Version History
+
+- **2.0.0** (2025-11-10) - Aztec 3.0.0-devnet.4 upgrade
+  - ✅ Upgraded to Aztec 3.0.0-devnet.4
+  - ✅ Contract API migration complete
+  - ✅ All tests passing (3/3)
+  - ✅ New test command: `aztec test`
+  - See [checkpoint-aztec-3.0-upgrade.md](../.wip/checkpoints/checkpoint-aztec-3.0-upgrade.md)
 
 - **1.0.0** (2025-10-27) - Initial production release
   - Both SHA-256 and Poseidon circuits production-ready
@@ -486,4 +532,5 @@ docker-compose down     # Stop services
 ---
 
 **Status:** ✅ **PRODUCTION READY**
-**Last Updated:** October 27, 2025
+**Aztec Version:** 3.0.0-devnet.4
+**Last Updated:** November 10, 2025

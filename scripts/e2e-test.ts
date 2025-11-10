@@ -84,18 +84,9 @@ async function main() {
     console.log('Checking manifest structure...');
     if (manifest.version !== 1) throw new Error('Invalid version');
     if (!manifest.doc_hash || manifest.doc_hash.length !== 64) throw new Error('Invalid doc_hash');
-    if (!manifest.artifact.artifact_hash || manifest.artifact.artifact_hash.length !== 64) throw new Error('Invalid artifact_hash');
     if (!manifest.signer.fingerprint || manifest.signer.fingerprint.length !== 64) throw new Error('Invalid signer fingerprint');
     if (!manifest.tl_root || manifest.tl_root.length !== 64) throw new Error('Invalid tl_root');
     console.log('✅ Manifest structure valid');
-
-    console.log('\nVerifying artifact binding...');
-    const cipherData = fs.readFileSync('out/encrypted-file.bin');
-    const computedHash = crypto.createHash('sha256').update(cipherData).digest('hex');
-    if (computedHash !== manifest.artifact.artifact_hash) {
-        throw new Error('Artifact hash mismatch!');
-    }
-    console.log('✅ Artifact hash matches encrypted file');
 
     console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log('TEST 3: Tamper Detection (Ciphertext)');

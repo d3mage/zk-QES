@@ -10,9 +10,6 @@ import * as path from "path";
 interface Manifest {
     version: number;
     doc_hash: string;
-    artifact: {
-        artifact_hash: string;
-    };
     signer: {
         fingerprint: string;
     };
@@ -90,7 +87,6 @@ Options:
 
     // Parse manifest data
     const doc_hash = Buffer.from(manifest.doc_hash, 'hex');
-    const artifact_hash = Buffer.from(manifest.artifact.artifact_hash, 'hex');
     const signer_fpr = Buffer.from(manifest.signer.fingerprint, 'hex');
     const tl_root = Buffer.from(manifest.tl_root, 'hex');
 
@@ -103,14 +99,13 @@ Options:
     }
 
     // Validate lengths
-    if (doc_hash.length !== 32 || artifact_hash.length !== 32 || signer_fpr.length !== 32 || tl_root.length !== 32 || tl_root_eu.length !== 32) {
+    if (doc_hash.length !== 32 || signer_fpr.length !== 32 || tl_root.length !== 32 || tl_root_eu.length !== 32) {
         logger.error('Invalid hash lengths in manifest');
         process.exit(1);
     }
 
     // Convert buffers to number arrays
     const doc_hash_array = Array.from(doc_hash);
-    const artifact_hash_array = Array.from(artifact_hash);
     const signer_fpr_array = Array.from(signer_fpr);
     const tl_root_array = Array.from(tl_root);
     const tl_root_eu_array = Array.from(tl_root_eu);
@@ -133,7 +128,6 @@ Options:
         const tx = await contract.methods
             .anchor_proof(
                 doc_hash_array,
-                artifact_hash_array,
                 signer_fpr_array,
                 tl_root_array,
                 tl_root_eu_array,

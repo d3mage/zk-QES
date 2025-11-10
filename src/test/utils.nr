@@ -9,9 +9,9 @@ pub unconstrained fn setup() -> (TestEnvironment, AztecAddress, AztecAddress) {
 
     let admin = env.create_light_account();
 
-    let initializer_call_interface = AztecAnchor::interface().constructor();
+    let initializer = AztecAnchor::interface().constructor();
     let anchor_contract_address =
-        env.deploy("AztecAnchor").with_public_initializer(admin, initializer_call_interface);
+        env.deploy("AztecAnchor").with_public_initializer(admin, initializer);
 
     (env, anchor_contract_address, admin)
 }

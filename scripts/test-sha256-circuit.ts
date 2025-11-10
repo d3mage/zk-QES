@@ -21,25 +21,27 @@ async function main() {
     const rootData = JSON.parse(fs.readFileSync(path.join(outDir, 'tl_root.json'), 'utf-8'));
     const proofData = JSON.parse(fs.readFileSync(path.join(outDir, 'paths/06a02856c08dde5c6679377c06f6fe7be1855d586bd1448343db2736b1473cd3.json'), 'utf-8'));
 
-    const artifact_hash = new Uint8Array(32).fill(0);
     const signature = new Uint8Array(Buffer.from(sig.r + sig.s, 'hex'));
     const pub_key_x = new Uint8Array(Buffer.from(pubkey.x, 'hex'));
     const pub_key_y = new Uint8Array(Buffer.from(pubkey.y, 'hex'));
-    
+
     const signer_fpr = new Uint8Array(Buffer.from('06a02856c08dde5c6679377c06f6fe7be1855d586bd1448343db2736b1473cd3', 'hex'));
     const tl_root = new Uint8Array(Buffer.from(rootData.root, 'hex'));
     const merkle_path = proofData.path.map((p: string) => Array.from(Buffer.from(p, 'hex')));
 
     const inputs = {
         doc_hash: Array.from(doc_hash),
-        artifact_hash: Array.from(artifact_hash),
         pub_key_x: Array.from(pub_key_x),
         pub_key_y: Array.from(pub_key_y),
         signature: Array.from(signature),
         signer_fpr: Array.from(signer_fpr),
         tl_root: Array.from(tl_root),
+        eu_trust_enabled: false,
+        tl_root_eu: Array(32).fill(0),
         merkle_path,
-        index: proofData.index.toString()
+        index: proofData.index.toString(),
+        eu_merkle_path: Array(8).fill(Array(32).fill(0)),
+        eu_index: '0'
     };
 
     console.log('  ✓ Inputs prepared');

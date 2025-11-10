@@ -1,10 +1,9 @@
 use dep::std::ecdsa_secp256r1::verify_signature;
-use dep::std::hash::sha256;
+use dep::sha256::sha256_var;
 
 fn main(
-    // Document and artifact binding (all public)
+    // Document binding (public)
     doc_hash: pub [u8; 32],           // SHA-256 digest of PDF ByteRange
-    artifact_hash: pub [u8; 32],      // SHA-256 of ciphertext or CID
 
     // Signer identity and trust list (public)
     pub_key_x: pub [u8; 32],          // Public key X coordinate (big-endian)
@@ -40,11 +39,6 @@ fn main(
         let computed_eu_root = compute_merkle_root_sha256(signer_fpr, eu_index, eu_merkle_path);
         assert(computed_eu_root == tl_root_eu, "Signer not in EU Trust List");
     }
-
-    // 4. artifact_hash is public and bound to the proof
-    // Binding is enforced by making it a public input
-    // The verifier must check that artifact_hash matches the actual ciphertext/CID hash
-    // No explicit constraint needed - public input provides the binding
 }
 
 // Helper: convert 32-byte array to Field (big-endian interpretation)
@@ -104,7 +98,7 @@ fn hash_pair_sha256(left: [u8; 32], right: [u8; 32]) -> [u8; 32] {
         input[i + 32] = right[i];
     }
 
-    sha256(input)
+    sha256_var(input, 64)
 }
 
 // Convert Field to 32-byte array (big-endian)

@@ -16,11 +16,6 @@ import { UltraPlonkBackend as BarretenbergBackend } from '@aztec/bb.js';
 interface Manifest {
     version: number;
     doc_hash: string;
-    artifact: {
-        type: string;
-        artifact_hash: string;
-        cid?: string;
-    };
     signer: {
         pub_x: string;
         pub_y: string;
@@ -70,30 +65,8 @@ async function main() {
     console.log(`  Signer:    ${manifest.signer.fingerprint}`);
     console.log(`  EU Trust:  ${manifest.eu_trust?.enabled ? 'ENABLED' : 'disabled'}`);
 
-    // 2. Verify artifact binding
-    console.log('\n[2/6] Verifying artifact binding...');
-
-    // Check if actual artifact exists and hash matches
-    const cipherPath = path.join(outDir, 'encrypted-file.bin');
-    if (fs.existsSync(cipherPath)) {
-        const cipherData = fs.readFileSync(cipherPath);
-        const computedHash = crypto.createHash('sha256').update(cipherData).digest('hex');
-
-        if (computedHash === manifest.artifact.artifact_hash) {
-            console.log(`  ✓ Artifact hash matches ciphertext`);
-        } else {
-            console.error(`  ✗ Artifact hash mismatch!`);
-            console.error(`    Expected: ${manifest.artifact.artifact_hash}`);
-            console.error(`    Got:      ${computedHash}`);
-            process.exit(1);
-        }
-    } else {
-        console.log(`  ⚠ Ciphertext not found, skipping artifact binding check`);
-        console.log(`    (Manifest declares artifact_hash: ${manifest.artifact.artifact_hash})`);
-    }
-
-    // 3. Verify local trust list membership
-    console.log('\n[3/6] Verifying local trust list membership...');
+    // 2. Verify local trust list membership
+    console.log('\n[2/5] Verifying local trust list membership...');
 
     const tlRootPath = path.join(outDir, 'tl_root.hex');
     if (fs.existsSync(tlRootPath)) {
@@ -111,8 +84,8 @@ async function main() {
         console.log(`    (Manifest declares tl_root: ${manifest.tl_root})`);
     }
 
-    // 4. Verify EU Trust List membership (if enabled)
-    console.log('\n[4/6] Verifying EU Trust List membership...');
+    // 3. Verify EU Trust List membership (if enabled)
+    console.log('\n[3/5] Verifying EU Trust List membership...');
 
     if (manifest.eu_trust?.enabled) {
         const euRootPath = path.join(outDir, 'tl_root_eu.hex');
@@ -136,8 +109,8 @@ async function main() {
         console.log(`    (Using local trust list only)`);
     }
 
-    // 5. Load proof data
-    console.log('\n[5/6] Loading proof...');
+    // 4. Load proof data
+    console.log('\n[4/5] Loading proof...');
 
     const vkeyPath = path.join(outDir, 'vkey.bin');
     const proofJsonPath = path.join(outDir, 'proof.json');
@@ -157,8 +130,8 @@ async function main() {
     console.log(`  VKey size:  ${vkey.length} bytes`);
     console.log(`  Public inputs: ${publicInputs.length} values`);
 
-    // 6. Verify ZK proof
-    console.log('\n[6/6] Verifying zero-knowledge proof...');
+    // 5. Verify ZK proof
+    console.log('\n[5/5] Verifying zero-knowledge proof...');
 
     const circuit = await compileCircuit();
     const backend = new BarretenbergBackend(circuit.bytecode);
@@ -180,7 +153,6 @@ async function main() {
             if (manifest.eu_trust?.enabled) {
                 console.log('  ✓ Signer is in the EU Trust List (dual trust)');
             }
-            console.log('  ✓ Proof is bound to the specific artifact');
             console.log('  ✓ Signature validity proven in zero-knowledge\n');
             process.exit(0);
         } else {
