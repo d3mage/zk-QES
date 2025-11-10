@@ -68,11 +68,16 @@ yarn compile:circuit
 
 **For Aztec smart contract:**
 ```bash
-# Compile AztecAnchor contract
+# Compile DocumentRegistry contract
 aztec-nargo compile
 
-# Output: target/aztec_anchor-AztecAnchor.json
+# Postprocess contract (REQUIRED for tests)
+aztec-postprocess-contract
+
+# Output: target/document_registry-DocumentRegistry.json (1.1 MB)
 ```
+
+**Note:** See [COMPILATION-AND-TESTING.md](./COMPILATION-AND-TESTING.md) for detailed compilation and testing guide.
 
 ### Run Tests
 
@@ -82,7 +87,7 @@ aztec-nargo compile
 aztec test
 
 # Expected output:
-# [aztec_anchor] 3 tests passed
+# [document_registry] 3 tests passed
 ```
 
 **For ZK circuit tests:**
