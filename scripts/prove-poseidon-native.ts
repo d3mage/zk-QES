@@ -1,9 +1,8 @@
 #!/usr/bin/env node
 /**
- * prove-with-bb.ts
+ * prove-poseidon-native.ts
  *
- * Generate proof using native bb CLI instead of bb.js
- * This avoids WASM limitations for the SHA-256 circuit
+ * Generate proof for Poseidon circuit using native bb CLI
  */
 
 import fs from 'node:fs';
@@ -11,19 +10,21 @@ import path from 'node:path';
 import { execSync } from 'node:child_process';
 
 async function main() {
-    console.log('=== Generating Proof with Native bb CLI ===\n');
+    console.log('=== Generating Poseidon Proof with Native bb CLI ===\n');
 
     const outDir = 'out';
-    const circuitDir = 'circuits/pades_ecdsa';
+    const circuitDir = 'circuits/pades_ecdsa_poseidon';
 
-    // Step 1: Load inputs (same as prove.ts)
+    // Step 1: Load inputs
     console.log('[1/4] Loading inputs...');
 
     const docHashPath = path.join(outDir, 'VERIFIED_signed_attrs_hash.bin');
     const doc_hash = Array.from(fs.readFileSync(docHashPath));
 
     const cipherHashPath = path.join(outDir, 'cipher_hash.bin');
-    const artifact_hash = Array.from(fs.readFileSync(cipherHashPath));
+    const artifact_hash = fs.existsSync(cipherHashPath)
+        ? Array.from(fs.readFileSync(cipherHashPath))
+        : Array(32).fill(0);
 
     const pubkeyPath = path.join(outDir, 'VERIFIED_pubkey.json');
     const pubkey = JSON.parse(fs.readFileSync(pubkeyPath, 'utf-8'));
@@ -32,46 +33,42 @@ async function main() {
 
     const sigPath = path.join(outDir, 'VERIFIED_sig.json');
     const sig = JSON.parse(fs.readFileSync(sigPath, 'utf-8'));
-    const signature = Array.from(Buffer.from(sig.signature, 'hex'));
+    const signature = Array.from(Buffer.from(sig.r + sig.s, 'hex'));
 
-    // Compute signer fingerprint
-    const certPath = 'test_files/EU-6669243D2B04331D0400000014EB9900F741B404.cer';
-    const certDer = fs.readFileSync(certPath);
-    const crypto = await import('node:crypto');
-    const signer_fpr = Array.from(crypto.createHash('sha256').update(certDer).digest());
+    // Load Poseidon Merkle data
+    const rootPath = path.join(outDir, 'tl_root_poseidon.json');
+    const rootData = JSON.parse(fs.readFileSync(rootPath, 'utf-8'));
+    const tl_root = rootData.root_decimal;
 
-    const tlRootPath = path.join(outDir, 'tl_root.hex');
-    const tl_root = Array.from(Buffer.from(fs.readFileSync(tlRootPath, 'utf-8').trim(), 'hex'));
+    // Use first signer fingerprint
+    const signerFpr = '06a02856c08dde5c6679377c06f6fe7be1855d586bd1448343db2736b1473cd3';
+    const signer_fpr = BigInt('0x' + signerFpr).toString(10);
 
-    const signerFprHex = Buffer.from(signer_fpr).toString('hex');
-    const proofPath = path.join(outDir, 'paths', `${signerFprHex}.json`);
+    const proofPath = path.join(outDir, 'paths-poseidon', `${signerFpr}.json`);
     const proofData = JSON.parse(fs.readFileSync(proofPath, 'utf-8'));
-    const merkle_path = proofData.path.map((hex: string) => Array.from(Buffer.from(hex, 'hex')));
-    while (merkle_path.length < 8) {
-        merkle_path.push(Array(32).fill(0));
-    }
+    const merkle_path = proofData.merkle_path_decimal;
     const index = proofData.index.toString();
 
     console.log(`  ✓ Inputs loaded`);
-    console.log(`    doc_hash: ${Buffer.from(doc_hash).toString('hex').substring(0, 32)}...`);
-    console.log(`    signer_fpr: ${signerFprHex}`);
+    console.log(`    signer_fpr: ${signerFpr}`);
+    console.log(`    tl_root: ${tl_root}`);
     console.log(`    index: ${index}`);
 
-    // Step 2: Create Prover.toml for nargo
+    // Step 2: Create Prover.toml
     console.log('\n[2/4] Creating Prover.toml...');
 
     const proverToml = `doc_hash = [${doc_hash.join(', ')}]
 artifact_hash = [${artifact_hash.join(', ')}]
 pub_key_x = [${pub_key_x.join(', ')}]
 pub_key_y = [${pub_key_y.join(', ')}]
-signer_fpr = [${signer_fpr.join(', ')}]
-tl_root = [${tl_root.join(', ')}]
+signer_fpr = "${signer_fpr}"
+tl_root = "${tl_root}"
 eu_trust_enabled = false
-tl_root_eu = [${Array(32).fill(0).join(', ')}]
+tl_root_eu = "0"
 signature = [${signature.join(', ')}]
-merkle_path = [${merkle_path.map(arr => `[${arr.join(', ')}]`).join(', ')}]
+merkle_path = ["${merkle_path.join('", "')}"]
 index = "${index}"
-eu_merkle_path = [${Array(8).fill(Array(32).fill(0)).map(arr => `[${arr.join(', ')}]`).join(', ')}]
+eu_merkle_path = ["${Array(8).fill('0').join('", "')}"]
 eu_index = "0"
 `;
 
@@ -95,25 +92,25 @@ eu_index = "0"
     console.log('\n[4/4] Generating proof with bb CLI...');
 
     try {
-        const cmd = `bb prove -b ${circuitDir}/target/pades_ecdsa.json -w ${circuitDir}/target/witness.gz -o ${outDir}`;
+        const cmd = `bb prove -b ${circuitDir}/target/pades_ecdsa_poseidon.json -w ${circuitDir}/target/witness.gz -o ${outDir}/proof-poseidon`;
         console.log(`  Running: ${cmd}`);
         execSync(cmd, { stdio: 'inherit' });
         console.log('  ✓ Proof generated!');
 
         // Verify the proof was created
-        if (fs.existsSync(path.join(outDir, 'proof'))) {
-            const proofSize = fs.statSync(path.join(outDir, 'proof')).size;
+        if (fs.existsSync(path.join(outDir, 'proof-poseidon'))) {
+            const proofSize = fs.statSync(path.join(outDir, 'proof-poseidon')).size;
             console.log(`  ✓ Proof file created: ${proofSize} bytes`);
         }
 
-        if (fs.existsSync(path.join(outDir, 'vk'))) {
+        if (fs.existsSync(path.join(outDir, 'vk-poseidon'))) {
             console.log('  ✓ Verification key created');
         }
 
-        console.log('\n✅ SUCCESS! Proof generated with native bb CLI');
+        console.log('\n✅ SUCCESS! Poseidon proof generated with native bb CLI');
         console.log('   Files created:');
-        console.log('   - out/proof');
-        console.log('   - out/vk');
+        console.log('   - out/proof-poseidon');
+        console.log('   - out/vk-poseidon');
 
     } catch (error) {
         console.error('  ✗ Proof generation failed');
