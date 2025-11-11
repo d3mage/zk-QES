@@ -160,27 +160,27 @@ Rather than focusing solely on EU's eIDAS, we support the complete landscape of 
 
 ### 4.1 System Overview
 
-```
-┌─────────────────────────────────────────────────────────┐
-│              Document Management Layer                   │
-│  (Confidential NDA Platform - Aztec Horizon)            │
-└────────────────────┬────────────────────────────────────┘
-                     │
-┌────────────────────┴────────────────────────────────────┐
-│         ZK Qualified Signature Verification              │
-│                                                          │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
-│  │   Extract    │→│   Generate   │→│   Anchor     │  │
-│  │  Signature   │  │   ZK Proof   │  │  on Aztec    │  │
-│  └──────────────┘  └──────────────┘  └──────────────┘  │
-└────────────────────┬────────────────────────────────────┘
-                     │
-┌────────────────────┴────────────────────────────────────┐
-│              Aztec Protocol Layer                        │
-│  • Privacy-preserving proof registry                     │
-│  • Public verification without exposing signatures       │
-│  • Immutable audit trail                                 │
-└─────────────────────────────────────────────────────────┘
+```mermaid
+graph TB
+    subgraph Horizon["Document Management Layer (Aztec Horizon)"]
+        NDA[Confidential NDA Platform]
+    end
+
+    subgraph ZK["ZK Qualified Signature Verification"]
+        Extract[Extract Signature]
+        Prove[Generate ZK Proof]
+        Anchor[Anchor on Aztec]
+        Extract --> Prove --> Anchor
+    end
+
+    subgraph Aztec["Aztec Protocol Layer"]
+        Registry[Privacy-Preserving Proof Registry]
+        Verify[Public Verification]
+        Audit[Immutable Audit Trail]
+    end
+
+    Horizon --> ZK
+    ZK --> Aztec
 ```
 
 ### 4.2 Zero-Knowledge Circuit
@@ -462,41 +462,36 @@ Encrypted Doc → ciphertext → artifact_hash (verified in proof)
 
 **Architecture: Complete Client-Side Workflow**
 
-```
-┌─────────────────────────────────────────────────────┐
-│                  User's Browser                      │
-├─────────────────────────────────────────────────────┤
-│                                                      │
-│  1. User uploads PKCS#12 file (.p12/.pfx)          │
-│     + enters password                               │
-│                                                      │
-│  2. OpenSSL WASM parses certificate                 │
-│     - Extract private key (stays in memory)         │
-│     - Extract certificate chain                     │
-│     - Validate is QES certificate                   │
-│                                                      │
-│  3. User selects PDF to sign                        │
-│                                                      │
-│  4. Create PAdES signature in browser               │
-│     - Prepare PDF with signature placeholder        │
-│     - Calculate document hash                       │
-│     - Sign with private key (ECDSA/RSA)            │
-│     - Embed CMS signature in PDF                    │
-│                                                      │
-│  5. Generate ZK proof (2-3 seconds)                 │
-│     - Extract signature (r, s)                      │
-│     - Extract public key from certificate           │
-│     - Prove signature validity in ZK                │
-│                                                      │
-│  6. Clean up                                        │
-│     - Overwrite private key in memory               │
-│     - Trigger garbage collection                    │
-│                                                      │
-│  7. Submit to Aztec                                 │
-│     - Anchor ZK proof on-chain                      │
-│     - Store signed PDF on IPFS                      │
-│                                                      │
-└─────────────────────────────────────────────────────┘
+```mermaid
+sequenceDiagram
+    participant User
+    participant Browser
+    participant OpenSSL as OpenSSL WASM
+    participant ZK as ZK Circuit
+    participant Aztec
+
+    User->>Browser: Upload PKCS#12 + password
+    Browser->>OpenSSL: Parse certificate
+    OpenSSL->>OpenSSL: Extract private key (in memory)
+    OpenSSL->>OpenSSL: Validate QES certificate
+
+    User->>Browser: Select PDF to sign
+    Browser->>OpenSSL: Create PAdES signature
+    OpenSSL->>OpenSSL: Calculate document hash
+    OpenSSL->>OpenSSL: Sign with private key
+    OpenSSL->>Browser: Return signed PDF
+
+    Browser->>ZK: Generate proof (2-3 seconds)
+    ZK->>ZK: Extract signature (r, s)
+    ZK->>ZK: Prove validity in ZK
+    ZK->>Browser: Return ZK proof
+
+    Browser->>Browser: Overwrite private key
+    Browser->>Browser: Trigger garbage collection
+
+    Browser->>Aztec: Anchor proof on-chain
+    Browser->>IPFS: Store signed PDF
+    IPFS->>Browser: Return CID
 ```
 
 ### 5.2 Key Technical Components
