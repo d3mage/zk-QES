@@ -71,7 +71,7 @@
     "@aztec/protocol-contracts": "2.0.2",
     "@aztec/pxe": "2.0.2",
     "@aztec/stdlib": "2.0.2",
-    "@noir-lang/noir_js": "1.0.0-beta.3",
+    "@noir-lang/noir_js": "1.0.0-beta.15",
     "@peculiar/asn1-cms": "^2.3.8",
     "@peculiar/asn1-schema": "^2.3.8",
     "@peculiar/asn1-x509": "^2.3.8",
