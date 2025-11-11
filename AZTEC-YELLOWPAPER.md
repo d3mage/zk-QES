@@ -67,7 +67,10 @@ Rather than focusing solely on EU's eIDAS, we support the complete landscape of 
 ### 2.2 Feature Gaps
 
 **Missing Critical Features:**
-- **RSA Support:** Not implemented (60-70% of qualified certificates use RSA)
+- **RSA Support:** Fundamentally unviable in ZK (60-70% of certificates)
+  - Noir only has toy RSA-128, no production RSA library
+  - RSA-2048 = 5-10M constraints = 1-2 hour proofs
+  - Strategy: Push ECDSA adoption instead
 - **XAdES/CAdES:** Only signature extraction implemented (30% complete)
 - **US AATL:** Manual trust list only (automated fetching not implemented)
 - **Batch proofs:** Not implemented (limits throughput)
@@ -82,7 +85,7 @@ Rather than focusing solely on EU's eIDAS, we support the complete landscape of 
 | **Other 9 jurisdictions** | ✅ Supported | ❌ 0% | ❌ Theoretical only |
 | **XAdES** | Mentioned | ⏳ 30% | ❌ Extraction only |
 | **CAdES** | Mentioned | ⏳ 30% | ❌ Extraction only |
-| **RSA signatures** | Planned | ❌ 0% | ❌ Not started |
+| **RSA signatures** | Planned | ❌ 0% | ❌ Not viable in ZK |
 | **Performance** | Production | ✅ Production-ready | ✅ 2-3 seconds (hybrid) |
 
 ### 2.4 Deployment Reality
@@ -197,7 +200,7 @@ Rather than focusing solely on EU's eIDAS, we support the complete landscape of 
 **Signature Algorithms:**
 - ✅ ECDSA P-256 (secp256r1): Primary implementation
 - ✅ ECDSA P-384 (secp384r1): High-security variant
-- ⏳ RSA 2048/4096: Planned support
+- ❌ RSA 2048/4096: Not viable (5-10M constraints, 1-2 hour proofs)
 - ⏳ EdDSA (Ed25519): Future consideration
 
 **Hash Algorithms:**
@@ -205,8 +208,10 @@ Rather than focusing solely on EU's eIDAS, we support the complete landscape of 
 - ✅ SHA-384/512: High-security variant support
 - ✅ SHA-1: Legacy support (verification only)
 
-**Why ECDSA P-256:**
-- Most common in qualified certificates (70%+ of deployments)
+**Market Reality:**
+- RSA dominates: 60-70% of qualified certificates
+- ECDSA growing: 30% and increasing
+- Our strategy: Support ECDSA only, push market adoption
 - Required by FIPS 186-4 (US government)
 - Efficient ZK circuit implementation
 - Supported by all major CAs globally
@@ -1025,8 +1030,8 @@ Trust list build:
 - Dual Merkle tree validation (working)
 - Document and artifact binding (working)
 - Both Poseidon and SHA-256 variants (working)
-- ❌ Missing: RSA support (majority of certificates)
-- ❌ Missing: Performance optimization (20x improvement needed)
+- ❌ Cannot add: RSA support (not viable in current ZK technology)
+- ✅ Resolved: Performance via hybrid circuit (2-3 seconds)
 
 **✅ Aztec Smart Contracts (95%)**
 - AztecAnchor: Basic proof registry (working)
@@ -1125,10 +1130,13 @@ Each jurisdiction requires:
 - Circuit optimization techniques
 - Without this, project is DOA
 
-**2. RSA Support (CRITICAL)**
-- 60-70% of certificates use RSA
-- Currently: ECDSA only (minority of market)
-- Must have for real-world adoption
+**2. RSA Support (FUNDAMENTAL LIMITATION)**
+- 60-70% of certificates use RSA-2048/3072
+- Current Noir: Only toy RSA-128 examples exist
+- RSA-2048 would require 5-10M constraints (vs 20K for ECDSA)
+- Proof time: 1-2 HOURS (completely unviable)
+- **Reality: RSA may never be viable in ZK circuits**
+- **Strategy: Focus on ECDSA (30% market) and drive adoption**
 
 **3. US AATL Automation**
 - Currently: Manual trust list only
