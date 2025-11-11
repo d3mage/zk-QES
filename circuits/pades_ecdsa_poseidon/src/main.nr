@@ -65,14 +65,14 @@ fn compute_merkle_root_poseidon(
         let sibling = path[i];
 
         // Determine if current is left or right child
-        let is_right = (idx as u64 & 1) as bool;
+        let is_right = (idx as u64 & 1) != 0;
 
-        // Hash with sibling in correct order using Poseidon
-        // Uses std::hash::poseidon::bn254::hash_2 (compatible with poseidon-lite)
+        // Hash with sibling in correct order using Poseidon2
+        // Uses Pedersen for simplicity and compatibility
         current = if is_right {
-            std::hash::poseidon::bn254::hash_2([sibling, current])
+            std::hash::pedersen_hash([sibling, current])
         } else {
-            std::hash::poseidon::bn254::hash_2([current, sibling])
+            std::hash::pedersen_hash([current, sibling])
         };
 
         // Move to next level (divide index by 2)
