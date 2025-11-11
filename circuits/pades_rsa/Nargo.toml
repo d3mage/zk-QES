@@ -1,0 +1,8 @@
+[package]
+name = "pades_rsa"
+type = "bin"
+authors = [""]
+compiler_version = ">=0.35.0"
+
+[dependencies]
+noir_rsa = { git = "https://github.com/zkpassport/noir_rsa", tag = "v0.9.1" }
