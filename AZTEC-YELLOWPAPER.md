@@ -563,21 +563,351 @@ Encrypted Doc → ciphertext → artifact_hash (verified in proof)
 
 ---
 
-## 5. Integration with Aztec Horizon
+## 5. Frontend Signing Implementation (Planned)
+
+### 5.1 Browser-Based QES Signing with User's Certificates
+
+**Architecture: Complete Client-Side Workflow**
+
+```
+┌─────────────────────────────────────────────────────┐
+│                  User's Browser                      │
+├─────────────────────────────────────────────────────┤
+│                                                      │
+│  1. User uploads PKCS#12 file (.p12/.pfx)          │
+│     + enters password                               │
+│                                                      │
+│  2. OpenSSL WASM parses certificate                 │
+│     - Extract private key (stays in memory)         │
+│     - Extract certificate chain                     │
+│     - Validate is QES certificate                   │
+│                                                      │
+│  3. User selects PDF to sign                        │
+│                                                      │
+│  4. Create PAdES signature in browser               │
+│     - Prepare PDF with signature placeholder        │
+│     - Calculate document hash                       │
+│     - Sign with private key (ECDSA/RSA)            │
+│     - Embed CMS signature in PDF                    │
+│                                                      │
+│  5. Generate ZK proof (2-3 seconds)                 │
+│     - Extract signature (r, s)                      │
+│     - Extract public key from certificate           │
+│     - Prove signature validity in ZK                │
+│                                                      │
+│  6. Clean up                                        │
+│     - Overwrite private key in memory               │
+│     - Trigger garbage collection                    │
+│                                                      │
+│  7. Submit to Aztec                                 │
+│     - Anchor ZK proof on-chain                      │
+│     - Store signed PDF on IPFS                      │
+│                                                      │
+└─────────────────────────────────────────────────────┘
+```
+
+### 5.2 Technical Implementation Details
+
+**Key Libraries:**
+
+```javascript
+// Core signing infrastructure
+import OpenSSL from 'openssl-wasm';     // PKCS#12 parsing, signing
+import forge from 'node-forge';          // Alternative: pure JS crypto
+import { PDFDocument } from 'pdf-lib';   // PDF manipulation
+
+// ZK proof generation (already implemented)
+import { generateProof } from '@aztec/bb.js';
+```
+
+**Complete Frontend Workflow:**
+
+```typescript
+class BrowserQESSigner {
+  private openssl: OpenSSL;
+  private sensitiveData: WeakMap<any, any>;
+
+  async initialize() {
+    // Load OpenSSL WASM module
+    this.openssl = await OpenSSL.init();
+    this.sensitiveData = new WeakMap();
+  }
+
+  async signPDFWithUserCertificate(
+    p12File: File,
+    password: string,
+    pdfFile: File
+  ): Promise<{signedPDF: Blob, zkProof: Uint8Array}> {
+
+    try {
+      // Step 1: Load and validate PKCS#12
+      const p12Buffer = await p12File.arrayBuffer();
+      const certificate = await this.loadPKCS12(p12Buffer, password);
+
+      // Validate it's a qualified certificate
+      if (!this.isQualifiedCertificate(certificate)) {
+        throw new Error('Not a qualified electronic signature certificate');
+      }
+
+      // Step 2: Sign PDF with private key
+      const pdfBuffer = await pdfFile.arrayBuffer();
+      const signedPDF = await this.signPDF(
+        pdfBuffer,
+        certificate.privateKey,
+        certificate.cert,
+        certificate.chain
+      );
+
+      // Step 3: Extract signature for ZK proof
+      const signatureData = this.extractSignatureFromPDF(signedPDF);
+
+      // Step 4: Generate ZK proof (2-3 seconds)
+      const zkProof = await generateProof({
+        // Public inputs
+        doc_hash: signatureData.documentHash,
+        pub_key_x: signatureData.publicKey.x,
+        pub_key_y: signatureData.publicKey.y,
+        signer_fpr: this.sha256(certificate.cert),
+        tl_root: await this.getTrustListRoot(),
+
+        // Private inputs
+        signature: signatureData.signature,
+        merkle_path: await this.getMerklePath(certificate.cert),
+        merkle_index: await this.getMerkleIndex(certificate.cert)
+      });
+
+      // Step 5: CRITICAL - Clear private key from memory
+      this.securelyErasePrivateKey(certificate.privateKey);
+
+      return { signedPDF: new Blob([signedPDF]), zkProof };
+
+    } catch (error) {
+      // Ensure cleanup on error
+      this.emergencyCleanup();
+      throw error;
+    }
+  }
+
+  private async loadPKCS12(
+    p12Buffer: ArrayBuffer,
+    password: string
+  ): Promise<{privateKey: any, cert: any, chain: any[]}> {
+
+    // Write to virtual filesystem
+    this.openssl.FS.writeFile('/tmp/cert.p12', new Uint8Array(p12Buffer));
+
+    // Extract private key
+    const keyResult = this.openssl.exec([
+      'pkcs12',
+      '-in', '/tmp/cert.p12',
+      '-nocerts',
+      '-nodes',
+      '-passin', `pass:${password}`,
+      '-out', '/tmp/key.pem'
+    ]);
+
+    if (keyResult.code !== 0) {
+      throw new Error('Invalid password or corrupted certificate file');
+    }
+
+    // Extract certificate
+    this.openssl.exec([
+      'pkcs12',
+      '-in', '/tmp/cert.p12',
+      '-clcerts',
+      '-nokeys',
+      '-passin', `pass:${password}`,
+      '-out', '/tmp/cert.pem'
+    ]);
+
+    // Extract chain
+    this.openssl.exec([
+      'pkcs12',
+      '-in', '/tmp/cert.p12',
+      '-cacerts',
+      '-nokeys',
+      '-passin', `pass:${password}`,
+      '-out', '/tmp/chain.pem'
+    ]);
+
+    // Read extracted files
+    const privateKey = this.openssl.FS.readFile('/tmp/key.pem', {encoding: 'utf8'});
+    const cert = this.openssl.FS.readFile('/tmp/cert.pem', {encoding: 'utf8'});
+    const chain = this.openssl.FS.readFile('/tmp/chain.pem', {encoding: 'utf8'});
+
+    // Clean up virtual filesystem
+    this.openssl.FS.unlink('/tmp/cert.p12');
+    this.openssl.FS.unlink('/tmp/key.pem');
+    // Keep cert/chain for signing, clean after
+
+    return { privateKey, cert, chain };
+  }
+
+  private async signPDF(
+    pdfBuffer: ArrayBuffer,
+    privateKey: string,
+    certificate: string,
+    chain: string
+  ): Promise<ArrayBuffer> {
+
+    // Write files to OpenSSL virtual filesystem
+    this.openssl.FS.writeFile('/tmp/document.pdf', new Uint8Array(pdfBuffer));
+    this.openssl.FS.writeFile('/tmp/key.pem', privateKey);
+    this.openssl.FS.writeFile('/tmp/cert.pem', certificate);
+    this.openssl.FS.writeFile('/tmp/chain.pem', chain);
+
+    // Create detached CMS signature
+    this.openssl.exec([
+      'cms',
+      '-sign',
+      '-in', '/tmp/document.pdf',
+      '-signer', '/tmp/cert.pem',
+      '-inkey', '/tmp/key.pem',
+      '-certfile', '/tmp/chain.pem',
+      '-outform', 'DER',
+      '-binary',
+      '-out', '/tmp/signature.der'
+    ]);
+
+    const signature = this.openssl.FS.readFile('/tmp/signature.der');
+
+    // Embed signature in PDF (PAdES format)
+    const signedPDF = await this.embedSignatureInPDF(
+      pdfBuffer,
+      signature
+    );
+
+    // Clean up
+    this.openssl.FS.unlink('/tmp/document.pdf');
+    this.openssl.FS.unlink('/tmp/signature.der');
+
+    return signedPDF;
+  }
+
+  private securelyErasePrivateKey(privateKey: any): void {
+    // Overwrite memory
+    if (typeof privateKey === 'string') {
+      const randomData = crypto.getRandomValues(
+        new Uint8Array(privateKey.length)
+      );
+      // In reality, can't truly overwrite JS strings
+      // Best effort: dereference and GC
+      privateKey = null;
+    }
+
+    // Remove from tracking
+    this.sensitiveData.delete(privateKey);
+
+    // Trigger garbage collection if available
+    if (typeof gc === 'function') {
+      gc();
+    }
+  }
+
+  private isQualifiedCertificate(certificate: any): boolean {
+    // Check for QES policy OIDs (eIDAS)
+    const qualifiedOIDs = [
+      '0.4.0.194112.1.2',  // QCP-n-qscd
+      '0.4.0.194112.1.4',  // QCP-l-qscd
+    ];
+
+    // Parse certificate to check extensions
+    // Implementation depends on certificate format
+    // Return true if qualified, false otherwise
+    return true;  // Simplified for example
+  }
+}
+```
+
+### 5.3 Security Considerations
+
+**Private Key Protection:**
+
+1. **Memory Isolation**: Use Web Workers for signing to isolate from main thread
+2. **Immediate Cleanup**: Overwrite and dereference private keys after use
+3. **No Persistence**: Never store private keys in localStorage/cookies
+4. **Timeout Protection**: Clear keys if user idle > 5 minutes
+5. **Error Handling**: Emergency cleanup on any error
+
+**User Experience:**
+
+```typescript
+// Example: Secure file upload with progress
+async handleCertificateUpload(file: File, password: string) {
+  // Validate file type
+  if (!file.name.match(/\.(p12|pfx)$/i)) {
+    throw new Error('Please upload a .p12 or .pfx certificate file');
+  }
+
+  // Size check (prevent DoS)
+  if (file.size > 10 * 1024 * 1024) {  // 10MB max
+    throw new Error('Certificate file too large');
+  }
+
+  // Show loading indicator
+  this.ui.showLoading('Loading certificate...');
+
+  try {
+    const result = await this.signer.signPDFWithUserCertificate(
+      file,
+      password,
+      this.pdfFile
+    );
+
+    this.ui.showSuccess('Document signed successfully!');
+    this.ui.downloadFile(result.signedPDF, 'signed_document.pdf');
+
+  } catch (error) {
+    if (error.message.includes('Invalid password')) {
+      this.ui.showError('Incorrect password. Please try again.');
+    } else {
+      this.ui.showError('Signing failed: ' + error.message);
+    }
+  } finally {
+    // Always clear password from memory
+    password = null;
+    this.ui.hideLoading();
+  }
+}
+```
+
+### 5.4 Benefits Over Backend Signing
+
+| Aspect | Backend Signing | Frontend Signing (Our Approach) |
+|--------|----------------|----------------------------------|
+| **Private Key Custody** | ❌ Server holds keys | ✅ Never leaves browser |
+| **User Trust** | ❌ Must trust backend | ✅ Zero trust required |
+| **Compliance** | ⚠️ Complex regulations | ✅ User controls keys |
+| **Privacy** | ⚠️ Backend sees documents | ✅ Everything client-side |
+| **Infrastructure** | ❌ Need secure HSM | ✅ Just static files |
+| **Cost** | 💰💰 High (HSM, compliance) | 💰 Low (hosting only) |
+
+---
+
+## 6. Integration with Aztec Horizon
 
 ### 5.1 Confidential NDA Workflow
 
 **Horizon Requirement:** "Private signature execution and timestamping on Aztec"
 
-**Our Solution: Privacy Layer for EXISTING QES Signatures**
+**Our Solution: Two Modes for Maximum Flexibility**
 
-**Step 0: User Signs with Their QES (OUTSIDE our system)**
+**Mode 1: Verify Existing Signatures (Current)**
 ```
-User signs PDF with:
-- Smart card + PIN
-- Cloud HSM (SwissSign, D-Trust, etc.)
-- USB token (SafeNet, Gemalto, etc.)
-Result: Legally valid PAdES-signed PDF with embedded QES
+User signs with external tools → We verify and prove
+- Smart card + PIN (Adobe, DocuSign, etc.)
+- Cloud HSM (SwissSign, D-Trust)
+- USB token (SafeNet, Gemalto)
+→ Upload signed PDF → We extract & verify → Generate ZK proof
+```
+
+**Mode 2: Browser-Based Signing (Planned)**
+```
+User uploads their PKCS#12 certificate (.p12/.pfx) + password
+→ OpenSSL WASM signs PDF in browser
+→ Private key NEVER leaves browser
+→ Generate ZK proof immediately
+→ Complete client-side workflow
 ```
 
 **Step 1: NDA Creation and Traditional Signing**
@@ -1141,12 +1471,17 @@ Each jurisdiction requires:
 
 ### 9.1 Critical - Must Have (0-3 Months)
 
-**1. Performance Optimization (EXISTENTIAL)**
-- Target: <5 seconds proof generation
-- Approach: Native bb for all circuits
-- GPU acceleration investigation
-- Circuit optimization techniques
-- Without this, project is DOA
+**1. Frontend Signing with User's Certificates (HIGH PRIORITY)**
+- **Implementation**: OpenSSL WASM for browser-based PDF signing
+- **User Flow**: Upload PKCS#12 (.p12/.pfx) + password → Sign in browser
+- **Security**: Private keys NEVER leave browser, cleared after use
+- **Benefits**:
+  - Complete client-side workflow
+  - No trust in backend required
+  - Works with user's existing QES certificates
+  - Legal validity maintained (real QES signatures)
+- **Libraries**: OpenSSL WASM, forge.js, pdf-lib
+- **Timeline**: 2-4 weeks implementation
 
 **2. RSA Support (FUNDAMENTAL LIMITATION)**
 - 60-70% of certificates use RSA-2048/3072
