@@ -12,7 +12,7 @@
 
 ## Abstract
 
-We present a zero-knowledge proof system for privacy-preserving verification of qualified electronic signatures across multiple jurisdictions. Built on Aztec Protocol, our solution enables organizations to prove signature validity and regulatory compliance without revealing signer identities or signature contents. This directly addresses Aztec Horizon's requirement for "verifiable signatures and timestamps with strong privacy" in confidential contract management.
+We present a zero-knowledge proof system for privacy-preserving verification of EXISTING qualified electronic signatures across multiple jurisdictions. Users sign documents with their standard QES credentials (smart card, cloud HSM, etc.), and our system generates ZK proofs that verify these signatures are valid without revealing the signature itself or full signer identity. Built on Aztec Protocol, this creates an immutable, privacy-preserving audit trail of signature validity. This directly addresses Aztec Horizon's requirement for "verifiable signatures and timestamps with strong privacy" in confidential contract management.
 
 **Key Contribution:** First zero-knowledge proof implementation for EU eIDAS qualified signature verification on Aztec, with a roadmap toward multi-jurisdictional support.
 
@@ -245,35 +245,44 @@ Rather than focusing solely on EU's eIDAS, we support the complete landscape of 
 └─────────────────────────────────────────────────────────┘
 ```
 
-### 4.2 Zero-Knowledge Circuit
+### 4.2 Zero-Knowledge Circuit (VERIFICATION ONLY)
 
 **Implementation:** Noir (Aztec's ZK DSL)
 **Proof System:** UltraHonk (Barretenberg backend)
 **Circuit Type:** Hybrid SHA-256/Pedersen (optimized for production)
+**Purpose:** Verify EXISTING QES signatures from signed PDFs
+
+**⚠️ CRITICAL UNDERSTANDING:**
+```
+The circuit VERIFIES signatures, it does NOT CREATE them.
+1. User signs PDF with their QES (smart card/cloud HSM) OUTSIDE our system
+2. We extract the existing signature from the signed PDF
+3. Circuit proves this existing signature is valid
+4. NO private keys ever enter our system
+```
 
 **Public Inputs (Revealed):**
 ```noir
-pub doc_hash: [u8; 32],              // Document hash
-pub artifact_hash: [u8; 32],         // Encrypted document hash
-pub signer_fpr: [u8; 32],            // Signer cert fingerprint
+pub doc_hash: [u8; 32],              // Document hash from PDF ByteRange
+pub pub_key_x: [u8; 32],             // From QES certificate (public)
+pub pub_key_y: [u8; 32],             // From QES certificate (public)
+pub signer_fpr: [u8; 32],            // SHA-256(certificate DER)
 pub tl_root: Field,                  // Trust list Merkle root
 pub tl_root_eu: Field,               // EU Trust List root (optional)
 ```
 
 **Private Inputs (Hidden):**
 ```noir
-signature_r: [u8; 32],               // ECDSA r component
-signature_s: [u8; 32],               // ECDSA s component
-pub_key_x: [u8; 32],                 // Signer public key x
-pub_key_y: [u8; 32],                 // Signer public key y
+signature: [u8; 64],                 // EXISTING signature extracted from PDF (r||s)
 merkle_path: [Field; 8],             // Trust list inclusion proof
 merkle_index: Field,                 // Position in tree
+// NO PRIVATE KEY - we never have it, don't need it
 ```
 
 **Circuit Logic:**
-1. **ECDSA Verification**: Prove signature is valid over doc_hash
-2. **Merkle Proof**: Prove signer is in authorized trust list
-3. **Binding**: Prove artifact_hash matches encrypted document
+1. **ECDSA Verification**: Verify the EXISTING signature is valid for doc_hash
+2. **Merkle Proof**: Prove signer's certificate is in authorized trust list
+3. **NO KEY OPERATIONS**: Circuit never uses private keys or creates signatures
 4. **Dual Trust** (Optional): Verify against both local and EU/jurisdictional trust lists
 
 **Performance:**
@@ -560,11 +569,20 @@ Encrypted Doc → ciphertext → artifact_hash (verified in proof)
 
 **Horizon Requirement:** "Private signature execution and timestamping on Aztec"
 
-**Our Solution (with current 45-95 second limitation):**
+**Our Solution: Privacy Layer for EXISTING QES Signatures**
 
-**Step 1: NDA Creation (Horizon Platform)**
+**Step 0: User Signs with Their QES (OUTSIDE our system)**
 ```
-Creator drafts NDA → Uploads to IPFS → Gets CID_v0
+User signs PDF with:
+- Smart card + PIN
+- Cloud HSM (SwissSign, D-Trust, etc.)
+- USB token (SafeNet, Gemalto, etc.)
+Result: Legally valid PAdES-signed PDF with embedded QES
+```
+
+**Step 1: NDA Creation and Traditional Signing**
+```
+Creator drafts NDA → Signs with QES → Uploads signed PDF to IPFS → Gets CID_v0
 ```
 
 **Step 2: Document Registration (Our Contract)**
@@ -1195,13 +1213,14 @@ Each jurisdiction requires:
 
 ### 10.1 Summary
 
-We have demonstrated a production-ready proof-of-concept for privacy-preserving verification of qualified electronic signatures, with breakthrough performance optimization achieved November 11, 2025. Built on Aztec Protocol, our solution provides:
+We have demonstrated a production-ready proof-of-concept for privacy-preserving verification of EXISTING qualified electronic signatures. Users continue signing with their standard QES credentials (smart cards, cloud HSMs), and our system adds a privacy layer on top. Built on Aztec Protocol, our solution provides:
 
-1. **EU Regulatory Compliance**: Full PAdES support for eIDAS signatures (tested and working)
-2. **Privacy-Preserving**: Zero-knowledge proofs hide signatures while proving validity
-3. **Decentralized Trust**: Blockchain-based verification without central authorities
-4. **Production Performance**: 2-3 second proving time via hybrid SHA-256/Pedersen circuit
-5. **Technical Foundation**: ~80% complete, performance bottleneck resolved
+1. **Verification Layer**: We verify existing QES signatures, NOT create new ones
+2. **Legal Preservation**: Original QES signatures maintain full legal validity
+3. **Privacy Enhancement**: ZK proofs hide signatures while proving validity
+4. **No Key Management**: System never handles private keys (verification only)
+5. **Production Performance**: 2-3 second proving time via hybrid circuit
+6. **Clear Value Prop**: Complements existing QES infrastructure, doesn't replace it
 
 ### 10.2 Alignment with Aztec Horizon
 
