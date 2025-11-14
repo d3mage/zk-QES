@@ -16,11 +16,17 @@ interface Allowlist {
     cert_fingerprints: string[];
 }
 
+// BN254 field modulus (same as in Noir circuit)
+const FIELD_MODULUS = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
+
 // Convert hex string to Field (bigint)
+// Applies modulo to handle SHA-256 hashes that exceed BN254 field modulus
 function hexToField(hex: string): bigint {
     // Remove 0x prefix if present
     const cleanHex = hex.startsWith('0x') ? hex.slice(2) : hex;
-    return BigInt('0x' + cleanHex);
+    const value = BigInt('0x' + cleanHex);
+    // Apply modulo to ensure value fits in field
+    return value % FIELD_MODULUS;
 }
 
 // Convert Field to hex string (32 bytes, big-endian)

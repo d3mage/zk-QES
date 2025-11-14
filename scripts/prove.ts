@@ -137,7 +137,11 @@ async function loadInputs(): Promise<ProofInputs> {
     const signer_fpr_hex = signer_fpr_bytes.toString('hex');
 
     // Convert signer fingerprint to Field (decimal string for Pedersen)
-    const signer_fpr = BigInt('0x' + signer_fpr_hex).toString();
+    // Apply modulo to handle fingerprints that exceed BN254 field modulus
+    // BN254 field modulus: 21888242871839275222246405745257275088548364400416034343698204186575808495617
+    const FIELD_MODULUS = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
+    const signer_fpr_raw = BigInt('0x' + signer_fpr_hex);
+    const signer_fpr = (signer_fpr_raw % FIELD_MODULUS).toString();
 
     // 4. Read Pedersen Merkle tree root and proof
     const tlRootPath = path.join(outDir, 'tl_root_poseidon.txt');
