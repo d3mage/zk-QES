@@ -68,11 +68,11 @@ async function main() {
     // 2. Verify local trust list membership
     console.log('\n[2/5] Verifying local trust list membership...');
 
-    const tlRootPath = path.join(outDir, 'tl_root.hex');
+    const tlRootPath = path.join(outDir, 'tl_root_poseidon.txt');
     if (fs.existsSync(tlRootPath)) {
         const tlRoot = fs.readFileSync(tlRootPath, 'utf-8').trim();
         if (tlRoot === manifest.tl_root) {
-            console.log(`  ✓ Local trust list root matches`);
+            console.log(`  ✓ Local trust list root matches (Pedersen)`);
         } else {
             console.error(`  ✗ Local trust list root mismatch!`);
             console.error(`    Expected: ${tlRoot}`);
@@ -88,11 +88,11 @@ async function main() {
     console.log('\n[3/5] Verifying EU Trust List membership...');
 
     if (manifest.eu_trust?.enabled) {
-        const euRootPath = path.join(outDir, 'tl_root_eu.hex');
+        const euRootPath = path.join(outDir, 'tl_root_eu_poseidon.txt');
         if (fs.existsSync(euRootPath)) {
             const euRoot = fs.readFileSync(euRootPath, 'utf-8').trim();
             if (euRoot === manifest.eu_trust.tl_root_eu) {
-                console.log(`  ✓ EU Trust List root matches`);
+                console.log(`  ✓ EU Trust List root matches (Pedersen)`);
                 console.log(`  ✓ Dual trust verification enabled`);
             } else {
                 console.error(`  ✗ EU Trust List root mismatch!`);

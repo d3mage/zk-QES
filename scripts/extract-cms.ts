@@ -268,11 +268,17 @@ async function main() {
     fs.writeFileSync(sigBinPath, Buffer.concat([sigData.r, sigData.s]));
     fs.writeFileSync(pubkeyBinPath, Buffer.concat([pubKeyData.x, pubKeyData.y]));
 
+    // Save certificate in PEM format (needed by prove.ts for fingerprint calculation)
+    const certPemPath = path.join(outDir, 'cms_embedded_cert.pem');
+    const certPem = `-----BEGIN CERTIFICATE-----\n${certBuffer.toString('base64').match(/.{1,64}/g)?.join('\n')}\n-----END CERTIFICATE-----`;
+    fs.writeFileSync(certPemPath, certPem);
+
     console.log(`\nOutputs written:`);
     console.log(`  ${sigJsonPath}`);
     console.log(`  ${pubkeyJsonPath}`);
     console.log(`  ${sigBinPath} (r || s, 64 bytes)`);
     console.log(`  ${pubkeyBinPath} (x || y, 64 bytes)`);
+    console.log(`  ${certPemPath}`);
 }
 
 main().catch(err => {

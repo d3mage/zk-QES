@@ -21,51 +21,47 @@ interface ProofInputs {
     doc_hash: Uint8Array;
     pub_key_x: Uint8Array;
     pub_key_y: Uint8Array;
-    signer_fpr: Uint8Array;
-    tl_root: Uint8Array; // SHA-256 hash (32 bytes)
+    signer_fpr: string; // Field as decimal string (Pedersen leaf)
+    tl_root: string; // Field as decimal string (Pedersen root)
     eu_trust_enabled: boolean; // Feature flag for EU trust verification
-    tl_root_eu: Uint8Array; // EU Trust List Merkle root (32 bytes)
+    tl_root_eu: string; // EU Trust List Merkle root (Field as decimal string)
     signature: Uint8Array;
-    merkle_path: number[][]; // Array of byte arrays (each 32 bytes)
+    merkle_path: string[]; // Array of Field values as decimal strings
     index: string; // Field as decimal string
-    eu_merkle_path: number[][]; // EU Trust List Merkle path (8 x 32 bytes)
+    eu_merkle_path: string[]; // EU Trust List Merkle path (Fields as decimal strings)
     eu_index: string; // EU tree leaf index
 }
 
 interface EUTrustData {
-    tl_root_eu: Uint8Array;
-    eu_merkle_path: number[][];
+    tl_root_eu: string; // Field as decimal string
+    eu_merkle_path: string[]; // Array of Field values as decimal strings
     eu_index: string;
 }
 
 function loadEUTrustData(signerFingerprint: string): EUTrustData {
     const outDir = 'out';
 
-    // Load EU Trust List root
-    const euRootPath = path.join(outDir, 'tl_root_eu.hex');
+    // Load EU Trust List root (Pedersen/Poseidon - decimal format)
+    const euRootPath = path.join(outDir, 'tl_root_eu_poseidon.txt');
     if (!fs.existsSync(euRootPath)) {
         throw new Error(`EU Trust List root not found: ${euRootPath}. Run 'yarn eutl:fetch' and 'yarn eutl:root' first.`);
     }
-    const euRootHex = fs.readFileSync(euRootPath, 'utf-8').trim();
-    const tl_root_eu = new Uint8Array(Buffer.from(euRootHex, 'hex'));
+    const tl_root_eu = fs.readFileSync(euRootPath, 'utf-8').trim();
 
-    // Load EU Merkle proof for this signer
-    const euProofPath = path.join(outDir, 'eu_paths', `${signerFingerprint}.json`);
+    // Load EU Merkle proof for this signer (Poseidon format)
+    const euProofPath = path.join(outDir, 'eu_paths_poseidon', `${signerFingerprint}.json`);
     if (!fs.existsSync(euProofPath)) {
         throw new Error(`EU Merkle proof not found: ${euProofPath}\nSigner fingerprint: ${signerFingerprint}\nRun 'yarn eutl:root' to generate EU proofs.`);
     }
 
     const euProofData = JSON.parse(fs.readFileSync(euProofPath, 'utf-8'));
 
-    // Convert EU path from hex to byte arrays (use 'siblings' field)
-    const eu_merkle_path = euProofData.siblings.map((hex: string) => {
-        const bytes = Buffer.from(hex, 'hex');
-        return Array.from(new Uint8Array(bytes));
-    });
+    // Use decimal Field values for Pedersen Merkle tree
+    const eu_merkle_path = euProofData.merkle_path_decimal || [];
 
-    // Ensure exactly 8 elements (should already be 8 from eutl/root.ts)
+    // Ensure exactly 8 elements
     while (eu_merkle_path.length < 8) {
-        eu_merkle_path.push(Array(32).fill(0));
+        eu_merkle_path.push('0');
     }
 
     const eu_index = euProofData.index.toString();
@@ -137,31 +133,33 @@ async function loadInputs(): Promise<ProofInputs> {
 
     const certDer = Buffer.from(base64Content, 'base64');
 
-    const signer_fpr = crypto.createHash('sha256').update(certDer).digest();
+    const signer_fpr_bytes = crypto.createHash('sha256').update(certDer).digest();
+    const signer_fpr_hex = signer_fpr_bytes.toString('hex');
 
-    // 4. Read Merkle tree root and proof
-    const tlRootPath = path.join(outDir, 'tl_root.hex');
+    // Convert signer fingerprint to Field (decimal string for Pedersen)
+    const signer_fpr = BigInt('0x' + signer_fpr_hex).toString();
+
+    // 4. Read Pedersen Merkle tree root and proof
+    const tlRootPath = path.join(outDir, 'tl_root_poseidon.txt');
     if (!fs.existsSync(tlRootPath)) {
-        throw new Error(`Trust list root not found: ${tlRootPath}. Run 'yarn merkle:build' first.`);
+        throw new Error(`Trust list root not found: ${tlRootPath}. Run 'yarn merkle-poseidon:build' first.`);
     }
-    const tlRootHex = fs.readFileSync(tlRootPath, 'utf-8').trim();
-    const tl_root = new Uint8Array(Buffer.from(tlRootHex, 'hex'));
+    const tl_root = fs.readFileSync(tlRootPath, 'utf-8').trim();
 
-    // Find the Merkle proof for this signer
-    const proofPath = path.join(outDir, 'paths', `${signer_fpr.toString('hex')}.json`);
+    // Find the Merkle proof for this signer (Poseidon format)
+    const proofPath = path.join(outDir, 'paths-poseidon', `${signer_fpr_hex}.json`);
     if (!fs.existsSync(proofPath)) {
-        throw new Error(`Merkle proof not found: ${proofPath}\nSigner fingerprint: ${signer_fpr.toString('hex')}\nRun 'yarn merkle:build' to generate proofs.`);
+        throw new Error(`Merkle proof not found: ${proofPath}\nSigner fingerprint: ${signer_fpr_hex}\nRun 'yarn merkle-poseidon:build' to generate proofs.`);
     }
 
     const proofData = JSON.parse(fs.readFileSync(proofPath, 'utf-8'));
 
-    // Convert path from hex to Field decimal strings (pad to 8 elements)
-    const merkle_path = proofData.path.map((hex: string) => {
-        const bytes = Buffer.from(hex, 'hex');
-        return Array.from(new Uint8Array(bytes));
-    });
+    // Use decimal Field values for Pedersen Merkle tree
+    const merkle_path = proofData.merkle_path_decimal || [];
+
+    // Ensure exactly 8 elements
     while (merkle_path.length < 8) {
-        merkle_path.push(Array(32).fill(0)); // Pad with zero bytes
+        merkle_path.push('0');
     }
 
     const index = proofData.index.toString();
@@ -188,14 +186,14 @@ async function loadInputs(): Promise<ProofInputs> {
 
     if (euTrustEnabled) {
         console.log('EU Trust verification enabled, loading EU Trust List data...');
-        euTrustData = loadEUTrustData(signer_fpr.toString('hex'));
-        console.log(`  EU root:  ${Buffer.from(euTrustData.tl_root_eu).toString('hex')}`);
+        euTrustData = loadEUTrustData(signer_fpr_hex);
+        console.log(`  EU root:  ${euTrustData.tl_root_eu}`);
         console.log(`  EU index: ${euTrustData.eu_index}`);
     } else {
         // Provide zero values when EU trust is disabled (backward compatibility)
         euTrustData = {
-            tl_root_eu: new Uint8Array(32), // zeros
-            eu_merkle_path: Array(8).fill(Array(32).fill(0)),
+            tl_root_eu: '0',
+            eu_merkle_path: Array(8).fill('0'),
             eu_index: '0'
         };
     }
@@ -204,14 +202,14 @@ async function loadInputs(): Promise<ProofInputs> {
         doc_hash: message_for_sig,  // TEMP: Use signed_attrs_hash for ECDSA verification
         pub_key_x,
         pub_key_y,
-        signer_fpr: new Uint8Array(signer_fpr),
-        tl_root,
+        signer_fpr,  // Field as decimal string
+        tl_root,     // Field as decimal string
         eu_trust_enabled: euTrustEnabled,
-        tl_root_eu: euTrustData.tl_root_eu,
+        tl_root_eu: euTrustData.tl_root_eu,  // Field as decimal string
         signature,
-        merkle_path,
+        merkle_path,      // Array of Field decimal strings
         index,
-        eu_merkle_path: euTrustData.eu_merkle_path,
+        eu_merkle_path: euTrustData.eu_merkle_path,  // Array of Field decimal strings
         eu_index: euTrustData.eu_index
     };
 }
@@ -243,11 +241,11 @@ async function main() {
     console.log(`  doc_hash:     ${Buffer.from(inputs.doc_hash).toString('hex')}`);
     console.log(`  pub_key_x:    ${Buffer.from(inputs.pub_key_x).toString('hex')}`);
     console.log(`  pub_key_y:    ${Buffer.from(inputs.pub_key_y).toString('hex')}`);
-    console.log(`  signer_fpr:   ${Buffer.from(inputs.signer_fpr).toString('hex')}`);
-    console.log(`  tl_root:      ${Buffer.from(inputs.tl_root).toString('hex')}`);
+    console.log(`  signer_fpr:   ${inputs.signer_fpr} (Field)`);
+    console.log(`  tl_root:      ${inputs.tl_root} (Field)`);
     console.log(`  eu_trust:     ${inputs.eu_trust_enabled ? 'ENABLED' : 'disabled'}`);
     if (inputs.eu_trust_enabled) {
-        console.log(`  tl_root_eu:   ${Buffer.from(inputs.tl_root_eu).toString('hex')}`);
+        console.log(`  tl_root_eu:   ${inputs.tl_root_eu} (Field)`);
         console.log(`  eu_index:     ${inputs.eu_index}`);
     }
     console.log(`  index:        ${inputs.index}`);
@@ -259,23 +257,30 @@ async function main() {
     console.log('Initializing Noir...');
     const noir = new Noir(circuit);
 
-    console.log('Initializing Barretenberg backend...');
+    console.log('Initializing Barretenberg backend with increased memory...');
     // @aztec/bb.js expects the bytecode string, not the whole circuit object
-    const backend = new BarretenbergBackend(circuit.bytecode);
+    // Increase WASM memory to avoid "unreachable" errors
+    const backend = new BarretenbergBackend(circuit.bytecode, {
+        threads: 4,
+        memory: {
+            initial: 256,    // 256 pages = 16MB
+            maximum: 65536   // 65536 pages = 4GB
+        }
+    });
 
     // Prepare inputs in Noir format
     const noirInputs = {
         doc_hash: Array.from(inputs.doc_hash),
         pub_key_x: Array.from(inputs.pub_key_x),
         pub_key_y: Array.from(inputs.pub_key_y),
-        signer_fpr: Array.from(inputs.signer_fpr),
-        tl_root: Array.from(inputs.tl_root),
+        signer_fpr: inputs.signer_fpr,  // Field as string
+        tl_root: inputs.tl_root,        // Field as string
         eu_trust_enabled: inputs.eu_trust_enabled,
-        tl_root_eu: Array.from(inputs.tl_root_eu),
+        tl_root_eu: inputs.tl_root_eu,  // Field as string
         signature: Array.from(inputs.signature),
-        merkle_path: inputs.merkle_path,
+        merkle_path: inputs.merkle_path,      // Array of Field strings
         index: inputs.index,
-        eu_merkle_path: inputs.eu_merkle_path,
+        eu_merkle_path: inputs.eu_merkle_path, // Array of Field strings
         eu_index: inputs.eu_index
     };
 
@@ -316,19 +321,19 @@ async function main() {
         signer: {
             pub_x: Buffer.from(inputs.pub_key_x).toString('hex'),
             pub_y: Buffer.from(inputs.pub_key_y).toString('hex'),
-            fingerprint: Buffer.from(inputs.signer_fpr).toString('hex')
+            fingerprint: BigInt(inputs.signer_fpr).toString(16).padStart(64, '0')  // Convert Field back to hex
         },
-        tl_root: Buffer.from(inputs.tl_root).toString('hex'),
+        tl_root: inputs.tl_root,  // Store as Field decimal string
         proof: Buffer.from(proof.proof).toString('base64'),
         timestamp: new Date().toISOString(),
-        notes: 'Generated by prove.ts'
+        notes: 'Generated by prove.ts (hybrid Pedersen circuit)'
     };
 
     // Add EU trust information if enabled
     if (inputs.eu_trust_enabled) {
         manifest.eu_trust = {
             enabled: true,
-            tl_root_eu: Buffer.from(inputs.tl_root_eu).toString('hex'),
+            tl_root_eu: inputs.tl_root_eu,  // Store as Field decimal string
             eu_index: inputs.eu_index
         };
     } else {

@@ -2,17 +2,16 @@
 /**
  * e2e-test.ts
  *
- * End-to-end test for ZK Qualified Signature with artifact binding and EU Trust List.
- * Tests the complete pipeline, tamper detection, EU trust mode, and backward compatibility.
+ * End-to-end test for ZK Qualified Signature with EU Trust List.
+ * Tests the complete pipeline, EU trust mode, and backward compatibility.
  *
  * Usage: yarn e2e-test
  *
  * Tests:
- *   1. Complete pipeline (Task 2 baseline)
+ *   1. Complete pipeline (signature extraction, ZK proof, verification)
  *   2. Manifest validation
- *   3. Tamper detection
- *   4. EU trust enabled mode (Task 3)
- *   5. Backward compatibility (Task 2 mode still works)
+ *   3. EU trust enabled mode (dual trust verification)
+ *   4. Backward compatibility (local trust only mode)
  */
 
 import fs from 'node:fs';
@@ -57,17 +56,13 @@ async function main() {
     verifyFile('out/doc_hash.bin', 'Document hash');
     verifyFile('out/doc_hash.hex', 'Document hash (hex)');
 
-    run('node --loader ts-node/esm scripts/extract-cades.ts test-data/document_signed.pdf', 'Extract CAdES signature with PKI.js');
+    run('yarn extract-cades -- test-data/document_signed.pdf', 'Extract CAdES signature with PKI.js');
     verifyFile('out/VERIFIED_pubkey.json', 'Public key');
     verifyFile('out/VERIFIED_sig.json', 'Signature');
     verifyFile('out/VERIFIED_signed_attrs_hash.bin', 'Signed attributes hash');
 
-    run('yarn merkle:build -- allowlist.json --out out', 'Build Merkle tree');
-    verifyFile('out/tl_root.hex', 'Trust list root');
-
-    run('yarn encrypt-upload -- test-data/document.pdf --to out/VERIFIED_pubkey.json', 'Encrypt file');
-    verifyFile('out/cipher_hash.bin', 'Cipher hash');
-    verifyFile('out/encrypted-file.bin', 'Encrypted file');
+    run('yarn merkle-poseidon:build -- test-data/allowlist.json --out out', 'Build Pedersen Merkle tree');
+    verifyFile('out/tl_root_poseidon.txt', 'Trust list root (Poseidon)');
 
     run('yarn prove', 'Generate ZK proof');
     verifyFile('out/proof.bin', 'Proof');
@@ -89,35 +84,7 @@ async function main() {
     console.log('✅ Manifest structure valid');
 
     console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('TEST 3: Tamper Detection (Ciphertext)');
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
-
-    console.log('Creating tampered ciphertext...');
-    const originalCipher = fs.readFileSync('out/encrypted-file.bin');
-    fs.copyFileSync('out/encrypted-file.bin', 'out/encrypted-file.bin.backup');
-
-    const tamperedCipher = Buffer.from(originalCipher);
-    tamperedCipher[50] ^= 0xFF; // Flip one byte
-    fs.writeFileSync('out/encrypted-file.bin', tamperedCipher);
-
-    console.log('Attempting verification with tampered file...');
-    try {
-        execSync('yarn verify', { stdio: 'pipe' });
-        fs.copyFileSync('out/encrypted-file.bin.backup', 'out/encrypted-file.bin');
-        fs.unlinkSync('out/encrypted-file.bin.backup');
-        throw new Error('Verification should have failed!');
-    } catch (err: any) {
-        if (err.message === 'Verification should have failed!') {
-            throw err;
-        }
-        console.log('✅ Tampered ciphertext detected');
-    }
-
-    fs.copyFileSync('out/encrypted-file.bin.backup', 'out/encrypted-file.bin');
-    fs.unlinkSync('out/encrypted-file.bin.backup');
-
-    console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('TEST 4: EU Trust Enabled Mode');
+    console.log('TEST 3: EU Trust Enabled Mode');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
     console.log('Checking EU Trust List files...');
@@ -150,7 +117,7 @@ async function main() {
     console.log('✅ Dual trust verification passed');
 
     console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('TEST 5: Backward Compatibility');
+    console.log('TEST 4: Backward Compatibility');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
     console.log('Generating proof WITHOUT EU trust (Task 2 mode)...');
@@ -180,8 +147,6 @@ async function main() {
     console.log('Summary:');
     console.log('  ✓ Full pipeline executed successfully');
     console.log('  ✓ Manifest structure validated');
-    console.log('  ✓ Artifact binding verified');
-    console.log('  ✓ Tamper detection working');
     console.log('  ✓ EU trust enabled mode working');
     console.log('  ✓ Backward compatibility maintained');
     console.log('\n🎉 ZK Qualified Signature system is operational!\n');

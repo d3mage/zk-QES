@@ -35,10 +35,10 @@ function extractByteRangeData(pdfPath: string): Buffer {
 }
 
 async function main() {
-    try {
-        const pdfPath = process.argv[2] || 'test_files/sample_signed.pdf';
-        console.log(`Processing: ${pdfPath}\n`);
+    const pdfPath = process.argv[2] || 'test_files/sample_signed.pdf';
+    console.log(`Processing: ${pdfPath}\n`);
 
+    try {
         // Extract CMS and ByteRange data
         const cmsBuffer = extractCMSFromPDF(pdfPath);
         const byteRangeData = extractByteRangeData(pdfPath);
@@ -190,12 +190,18 @@ async function main() {
         y: pubY.toString('hex')
     }, null, 2));
 
+    // Save certificate in PEM format (needed by prove.ts for fingerprint calculation)
+    const certDer = cert.toSchema().toBER();
+    const certPem = `-----BEGIN CERTIFICATE-----\n${Buffer.from(certDer).toString('base64').match(/.{1,64}/g)?.join('\n') || Buffer.from(certDer).toString('base64')}\n-----END CERTIFICATE-----`;
+    fs.writeFileSync(path.join(outDir, 'cms_embedded_cert.pem'), certPem);
+
     console.log(`\n✓ Outputs saved to out/ directory`);
 
     // Optional verification test (don't fail if this doesn't work)
     console.log(`\n=== Verification Test (Optional) ===`);
     try {
-        const pubKeyPem = `-----BEGIN PUBLIC KEY-----\n${cert.subjectPublicKeyInfo.toSchema().toBER().toString('base64').match(/.{1,64}/g)?.join('\n')}\n-----END PUBLIC KEY-----`;
+        const pubKeyB64 = cert.subjectPublicKeyInfo.toSchema().toBER().toString('base64');
+        const pubKeyPem = `-----BEGIN PUBLIC KEY-----\n${pubKeyB64.match(/.{1,64}/g)?.join('\n') || pubKeyB64}\n-----END PUBLIC KEY-----`;
         const publicKey = crypto.createPublicKey(pubKeyPem);
 
         // Signature in ieee-p1363 format (r || s)
@@ -213,14 +219,29 @@ async function main() {
         console.log(`Node.js crypto verification: ⚠️  SKIPPED - ${e.message}`);
     }
     } catch (error: any) {
-        console.error('\n❌ Error extracting CAdES:', error.message);
+        console.error('\n❌ Error extracting CAdES:');
+        console.error('Message:', error?.message || 'Unknown error');
+        console.error('Stack:', error?.stack || 'No stack trace');
         throw error;
     }
 }
 
 main().catch(err => {
+    console.error('=== FATAL ERROR ===');
+    console.error('Error type:', typeof err);
     console.error('Error:', err);
-    if (err.message) console.error('Message:', err.message);
-    if (err.stack) console.error('Stack:', err.stack);
+
+    try {
+        if (err && typeof err === 'object') {
+            console.error('Keys:', Object.keys(err));
+            if (err.message) console.error('Message:', err.message);
+            if (err.stack) console.error('Stack:', err.stack);
+        } else {
+            console.error('Error value:', String(err));
+        }
+    } catch (e) {
+        console.error('Could not serialize error');
+    }
+
     process.exit(1);
 });

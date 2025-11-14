@@ -10,7 +10,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { poseidon2 } from 'poseidon-lite';
+import { BarretenbergSync, Fr } from '@aztec/bb.js';
 
 interface Allowlist {
     cert_fingerprints: string[];
@@ -33,11 +33,24 @@ function fieldToDecimal(field: bigint): string {
     return field.toString(10);
 }
 
-// Poseidon hash function for Merkle tree (matches Noir circuit)
-// Uses poseidon-lite which is compatible with Noir's std::hash::poseidon::bn254::hash_2
-function poseidonMerkleHash(left: bigint, right: bigint): bigint {
-    // poseidon2 from poseidon-lite returns a bigint directly
-    return poseidon2([left, right]);
+// Global Barretenberg API instance (initialized in main)
+let bbApi: any = null;
+
+// Pedersen hash function for Merkle tree (matches Noir circuit)
+// Uses Barretenberg which is guaranteed to match Noir's std::hash::pedersen_hash
+function pedersenMerkleHash(left: bigint, right: bigint): bigint {
+    if (!bbApi) {
+        throw new Error('Barretenberg API not initialized');
+    }
+
+    const leftFr = new Fr(left);
+    const rightFr = new Fr(right);
+
+    const hashFr = bbApi.pedersenHash([leftFr, rightFr], 0);
+
+    // Convert Fr back to bigint
+    const hashHex = hashFr.toString();
+    return BigInt(hashHex);
 }
 
 // Build Merkle tree from leaves
@@ -69,7 +82,7 @@ function buildMerkleTree(leaves: bigint[]): {
         for (let i = 0; i < currentLayer.length; i += 2) {
             const left = currentLayer[i];
             const right = currentLayer[i + 1];
-            const parent = poseidonMerkleHash(left, right);
+            const parent = pedersenMerkleHash(left, right);
             nextLayer.push(parent);
         }
 
@@ -119,7 +132,11 @@ async function main() {
         outDir = args[outIndex + 1];
     }
 
-    console.log('Building Poseidon Merkle tree from allowlist...');
+    // Initialize Barretenberg
+    console.log('Initializing Barretenberg...');
+    bbApi = await BarretenbergSync.initSingleton();
+
+    console.log('Building Pedersen Merkle tree from allowlist...');
     console.log(`  Input:  ${allowlistPath}`);
     console.log(`  Output: ${outDir}/`);
 
@@ -140,7 +157,7 @@ async function main() {
     const leaves = allowlist.cert_fingerprints.map(hexToField);
 
     // Build tree
-    console.log('\nBuilding Merkle tree with Poseidon hash (poseidon-lite)...');
+    console.log('\nBuilding Merkle tree with Pedersen hash (pedersen-fast)...');
     const { root, layers } = buildMerkleTree(leaves);
 
     const depth = layers.length - 1;
@@ -171,7 +188,7 @@ async function main() {
         root_decimal: rootDecimal,
         depth,
         leaf_count: leaves.length,
-        hash_function: 'Poseidon (poseidon-lite, compatible with Noir std::hash::poseidon::bn254)'
+        hash_function: 'Pedersen (Barretenberg/bb.js, guaranteed compatible with Noir std::hash::pedersen_hash)'
     }, null, 2));
 
     // Generate and save proofs for each fingerprint
