@@ -217,11 +217,11 @@ async function loadInputs(): Promise<ProofInputs> {
 }
 
 async function compileCircuit() {
-    const circuitDir = 'circuits/pades_ecdsa';
+    const circuitDir = 'circuits/pades_ecdsa_hybrid';
     const targetDir = path.join(circuitDir, 'target');
 
     // Check if circuit is already compiled
-    const compiledPath = path.join(targetDir, 'pades_ecdsa.json');
+    const compiledPath = path.join(targetDir, 'pades_ecdsa_hybrid.json');
     if (!fs.existsSync(compiledPath)) {
         console.log('Circuit not compiled. Compiling now...');
         const { execSync } = await import('node:child_process');

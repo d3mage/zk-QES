@@ -44,8 +44,8 @@ async function main() {
 
     // Prerequisites
     console.log('📋 Checking Prerequisites...');
-    verifyFile('test_files/sample_signed.pdf', 'Sample signed PDF');
-    verifyFile('test_files/sample.pdf', 'Sample unsigned PDF');
+    verifyFile('test-data/document_signed.pdf', 'Sample signed PDF');
+    verifyFile('test-data/document.pdf', 'Sample unsigned PDF');
     console.log('');
 
     // Test 1: Full Pipeline
@@ -53,11 +53,11 @@ async function main() {
     console.log('TEST 1: Complete Pipeline');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
-    run('yarn hash-byte-range -- test_files/sample_signed.pdf', 'Extract ByteRange hash');
+    run('yarn hash-byte-range -- test-data/document_signed.pdf', 'Extract ByteRange hash');
     verifyFile('out/doc_hash.bin', 'Document hash');
     verifyFile('out/doc_hash.hex', 'Document hash (hex)');
 
-    run('yarn extract-cades -- test_files/sample_signed.pdf', 'Extract CAdES signature with PKI.js');
+    run('yarn extract-cades -- test-data/document_signed.pdf', 'Extract CAdES signature with PKI.js');
     verifyFile('out/VERIFIED_pubkey.json', 'Public key');
     verifyFile('out/VERIFIED_sig.json', 'Signature');
     verifyFile('out/VERIFIED_signed_attrs_hash.bin', 'Signed attributes hash');
@@ -65,7 +65,7 @@ async function main() {
     run('yarn merkle:build -- allowlist.json --out out', 'Build Merkle tree');
     verifyFile('out/tl_root.hex', 'Trust list root');
 
-    run('yarn encrypt-upload -- test_files/sample.pdf --to out/VERIFIED_pubkey.json', 'Encrypt file');
+    run('yarn encrypt-upload -- test-data/document.pdf --to out/VERIFIED_pubkey.json', 'Encrypt file');
     verifyFile('out/cipher_hash.bin', 'Cipher hash');
     verifyFile('out/encrypted-file.bin', 'Encrypted file');
 

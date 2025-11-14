@@ -33,9 +33,9 @@ interface Manifest {
 }
 
 async function compileCircuit() {
-    const circuitDir = 'circuits/pades_ecdsa';
+    const circuitDir = 'circuits/pades_ecdsa_hybrid';
     const targetDir = path.join(circuitDir, 'target');
-    const compiledPath = path.join(targetDir, 'pades_ecdsa.json');
+    const compiledPath = path.join(targetDir, 'pades_ecdsa_hybrid.json');
 
     if (!fs.existsSync(compiledPath)) {
         throw new Error('Circuit not compiled. Run "yarn prove" first to compile and generate proof.');
