@@ -1,4 +1,4 @@
-name: CI/CD Pipeline
+name: CI Pipeline
 
 on:
   push:
@@ -7,9 +7,9 @@ on:
     branches: [ main ]
 
 jobs:
-  # Test job - runs E2E tests
+  # Test job - runs contract and circuit tests
   test:
-    name: E2E Tests
+    name: Contract & Circuit Tests
     runs-on: ubuntu-latest
 
     steps:
@@ -25,26 +25,35 @@ jobs:
       - name: Install dependencies
         run: yarn install --frozen-lockfile
 
+      - name: Install Aztec CLI
+        run: |
+          curl -s https://install.aztec.network > /tmp/install.sh
+          bash /tmp/install.sh
+
+      - name: Update PATH
+        run: echo "$HOME/.aztec/bin" >> $GITHUB_PATH
+
+      - name: Set up Aztec version
+        run: |
+          VERSION=3.0.0-devnet.5 aztec-up
+
       - name: Install Nargo
         run: |
           curl -L https://raw.githubusercontent.com/noir-lang/noirup/main/install | bash
-          source $HOME/.bashrc
-          noirup -v 1.0.0-beta.3
+          echo "$HOME/.nargo/bin" >> $GITHUB_PATH
+          $HOME/.nargo/bin/noirup -v 1.0.0-beta.15
 
-      - name: Install native bb
-        run: |
-          curl -L https://aztec-bb-artifacts.s3.amazonaws.com/bb-$(uname -m)-$(uname -s) -o bb
-          chmod +x bb
-          sudo mv bb /usr/local/bin/
+      - name: Compile hybrid circuit
+        run: cd circuits/pades_ecdsa_hybrid && $HOME/.nargo/bin/nargo compile
 
       - name: Compile Poseidon circuit
         run: cd circuits/pades_ecdsa_poseidon && $HOME/.nargo/bin/nargo compile
 
-      - name: Compile SHA-256 circuit
-        run: cd circuits/pades_ecdsa && $HOME/.nargo/bin/nargo compile
+      - name: Compile DocumentRegistry contract
+        run: VERSION=3.0.0-devnet.5 yarn compile
 
-      - name: Run Poseidon E2E test
-        run: yarn e2e-test-poseidon
+      - name: Run contract tests
+        run: VERSION=3.0.0-devnet.5 yarn test:nr
 
       - name: Upload test artifacts
         if: always()
@@ -53,74 +62,7 @@ jobs:
           name: test-outputs
           path: |
             out/
-            logs/
-
-  # Build job - builds Docker image
-  build:
-    name: Build Docker Image
-    runs-on: ubuntu-latest
-    needs: test
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: false
-          tags: zk-qualified-signature:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  # Benchmark job - runs performance benchmarks
-  benchmark:
-    name: Performance Benchmark
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'yarn'
-
-      - name: Install dependencies
-        run: yarn install --frozen-lockfile
-
-      - name: Install Nargo
-        run: |
-          curl -L https://raw.githubusercontent.com/noir-lang/noirup/main/install | bash
-          source $HOME/.bashrc
-          noirup -v 1.0.0-beta.3
-
-      - name: Install native bb
-        run: |
-          curl -L https://aztec-bb-artifacts.s3.amazonaws.com/bb-$(uname -m)-$(uname -s) -o bb
-          chmod +x bb
-          sudo mv bb /usr/local/bin/
-
-      - name: Compile circuits
-        run: |
-          cd circuits/pades_ecdsa_poseidon && $HOME/.nargo/bin/nargo compile
-          cd ../pades_ecdsa && $HOME/.nargo/bin/nargo compile
-
-      - name: Run benchmarks
-        run: yarn benchmark
-
-      - name: Upload benchmark results
-        uses: actions/upload-artifact@v4
-        with:
-          name: benchmark-results
-          path: benchmarks/
+            contracts/target/
 
   # Lint job - code quality checks
   lint:
@@ -143,10 +85,13 @@ jobs:
       - name: Check TypeScript types
         run: npx tsc --noEmit
 
-      - name: Check Noir circuits syntax
+      - name: Install Nargo
         run: |
           curl -L https://raw.githubusercontent.com/noir-lang/noirup/main/install | bash
-          source $HOME/.bashrc
-          noirup -v 1.0.0-beta.3
-          cd circuits/pades_ecdsa && $HOME/.nargo/bin/nargo check
+          echo "$HOME/.nargo/bin" >> $GITHUB_PATH
+          $HOME/.nargo/bin/noirup -v 1.0.0-beta.15
+
+      - name: Check Noir circuits syntax
+        run: |
+          cd circuits/pades_ecdsa_hybrid && $HOME/.nargo/bin/nargo check
           cd ../pades_ecdsa_poseidon && $HOME/.nargo/bin/nargo check
