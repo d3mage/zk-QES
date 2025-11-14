@@ -10,7 +10,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { BarretenbergSync, Fr } from '@aztec/bb.js';
+import { Barretenberg, BackendType } from '@aztec/bb.js';
 
 interface Allowlist {
     cert_fingerprints: string[];
@@ -38,26 +38,48 @@ let bbApi: any = null;
 
 // Pedersen hash function for Merkle tree (matches Noir circuit)
 // Uses Barretenberg which is guaranteed to match Noir's std::hash::pedersen_hash
-function pedersenMerkleHash(left: bigint, right: bigint): bigint {
+async function pedersenMerkleHash(left: bigint, right: bigint): Promise<bigint> {
     if (!bbApi) {
         throw new Error('Barretenberg API not initialized');
     }
 
-    const leftFr = new Fr(left);
-    const rightFr = new Fr(right);
+    // Convert bigint to Uint8Array (Fr in nightly is just Uint8Array)
+    const leftFr = bigintToUint8Array(left);
+    const rightFr = bigintToUint8Array(right);
 
-    const hashFr = bbApi.pedersenHash([leftFr, rightFr], 0);
+    // Async API in bb.js nightly: pass object with inputs and hashIndex
+    const result = await bbApi.pedersenHash({ inputs: [leftFr, rightFr], hashIndex: 0 });
+    const hashFr = result.hash;
 
-    // Convert Fr back to bigint
-    const hashHex = hashFr.toString();
-    return BigInt(hashHex);
+    // Convert Uint8Array back to bigint
+    return uint8ArrayToBigint(hashFr);
+}
+
+// Helper: Convert bigint to 32-byte Uint8Array (big-endian)
+function bigintToUint8Array(value: bigint): Uint8Array {
+    const bytes = new Uint8Array(32);
+    let num = value;
+    for (let i = 31; i >= 0; i--) {
+        bytes[i] = Number(num & 0xFFn);
+        num = num >> 8n;
+    }
+    return bytes;
+}
+
+// Helper: Convert 32-byte Uint8Array to bigint (big-endian)
+function uint8ArrayToBigint(bytes: Uint8Array): bigint {
+    let result = 0n;
+    for (let i = 0; i < bytes.length; i++) {
+        result = (result << 8n) | BigInt(bytes[i]);
+    }
+    return result;
 }
 
 // Build Merkle tree from leaves
-function buildMerkleTree(leaves: bigint[]): {
+async function buildMerkleTree(leaves: bigint[]): Promise<{
     root: bigint;
     layers: bigint[][];
-} {
+}> {
     if (leaves.length === 0) {
         throw new Error('Cannot build tree from empty leaves');
     }
@@ -82,7 +104,7 @@ function buildMerkleTree(leaves: bigint[]): {
         for (let i = 0; i < currentLayer.length; i += 2) {
             const left = currentLayer[i];
             const right = currentLayer[i + 1];
-            const parent = pedersenMerkleHash(left, right);
+            const parent = await pedersenMerkleHash(left, right);
             nextLayer.push(parent);
         }
 
@@ -132,9 +154,11 @@ async function main() {
         outDir = args[outIndex + 1];
     }
 
-    // Initialize Barretenberg
+    // Initialize Barretenberg (async API, uses default WASM backend)
     console.log('Initializing Barretenberg...');
-    bbApi = await BarretenbergSync.initSingleton();
+    bbApi = await Barretenberg.initSingleton({
+        threads: 4
+    });
 
     console.log('Building Pedersen Merkle tree from allowlist...');
     console.log(`  Input:  ${allowlistPath}`);
@@ -157,8 +181,8 @@ async function main() {
     const leaves = allowlist.cert_fingerprints.map(hexToField);
 
     // Build tree
-    console.log('\nBuilding Merkle tree with Pedersen hash (pedersen-fast)...');
-    const { root, layers } = buildMerkleTree(leaves);
+    console.log('\nBuilding Merkle tree with Pedersen hash (Barretenberg native/async)...');
+    const { root, layers } = await buildMerkleTree(leaves);
 
     const depth = layers.length - 1;
     console.log(`\nTree built successfully:`);
@@ -217,9 +241,18 @@ async function main() {
     console.log(`  - tl_root_poseidon.json (metadata)`);
     console.log(`  - paths-poseidon/*.json (inclusion proofs)`);
     console.log('\n✅ Done!');
+
+    // Cleanup: destroy Barretenberg instance to prevent hanging
+    await Barretenberg.destroySingleton();
 }
 
-main().catch((err) => {
+main().catch(async (err) => {
     console.error('Error:', err.message);
+    // Cleanup on error
+    try {
+        await Barretenberg.destroySingleton();
+    } catch (e) {
+        // Ignore cleanup errors
+    }
     process.exit(1);
 });

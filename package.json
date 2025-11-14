@@ -44,7 +44,7 @@
   "dependencies": {
     "@aztec/accounts": "3.0.0-devnet.5",
     "@aztec/aztec.js": "3.0.0-devnet.5",
-    "@aztec/bb.js": "0.82.2",
+    "@aztec/bb.js": "3.0.0-nightly.20251114",
     "@aztec/foundation": "^3.0.0-devnet.5",
     "@aztec/noir-contracts.js": "3.0.0-devnet.5",
     "@aztec/protocol-contracts": "3.0.0-devnet.5",

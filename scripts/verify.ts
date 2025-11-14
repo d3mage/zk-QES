@@ -11,7 +11,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { UltraPlonkBackend as BarretenbergBackend } from '@aztec/bb.js';
+import { UltraHonkBackend as BarretenbergBackend } from '@aztec/bb.js';
 
 interface Manifest {
     version: number;
@@ -154,14 +154,26 @@ async function main() {
                 console.log('  ✓ Signer is in the EU Trust List (dual trust)');
             }
             console.log('  ✓ Signature validity proven in zero-knowledge\n');
-            process.exit(0);
+
+            // Cleanup: destroy backend to prevent hanging
+            await backend.destroy();
         } else {
             console.log('\n❌ PROOF VERIFICATION FAILED');
             console.log('The proof is invalid or was generated incorrectly.');
+
+            // Cleanup before exit
+            await backend.destroy();
             process.exit(1);
         }
     } catch (error) {
         console.error('\n❌ VERIFICATION ERROR:', error);
+
+        // Cleanup before exit
+        try {
+            await backend.destroy();
+        } catch (e) {
+            // Ignore cleanup errors
+        }
         process.exit(1);
     }
 }

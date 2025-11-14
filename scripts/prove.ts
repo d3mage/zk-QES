@@ -15,7 +15,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { Noir } from '@noir-lang/noir_js';
-import { UltraPlonkBackend as BarretenbergBackend } from '@aztec/bb.js';
+import { UltraHonkBackend as BarretenbergBackend } from '@aztec/bb.js';
 
 interface ProofInputs {
     doc_hash: Uint8Array;
@@ -352,11 +352,11 @@ async function main() {
 
     console.log('\n✓ Proof generation complete!');
 
-    // Explicitly exit to prevent hanging due to Barretenberg handles
-    process.exit(0);
+    // Cleanup: destroy backend to prevent hanging
+    await backend.destroy();
 }
 
-main().catch(err => {
+main().catch(async err => {
     console.error('Error:', err.message);
     console.error(err.stack);
     process.exit(1);
