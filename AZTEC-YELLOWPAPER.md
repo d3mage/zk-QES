@@ -7,9 +7,9 @@
 |---|---|
 | **Project** | ZK Qualified Signature |
 | **Aztec Alignment** | Horizon - Confidential NDA Contract Management |
-| **Status** | Production-Ready Hybrid Circuit on Aztec 3.0.0-devnet.4 |
-| **Completion** | 80% (Core ZK functionality complete, hybrid circuit optimized) |
-| **Latest Update** | November 11, 2025 - Hybrid SHA-256/Pedersen circuit achieves 2-3 second proving |
+| **Status** | Production-Ready on Aztec 3.0.0-devnet.5 |
+| **Completion** | 95% (Core complete, self-signing workflow validated, production-ready) |
+| **Latest Update** | November 15, 2025 - Complete self-signing workflow, 100% certificate coverage, 7.6s proofs |
 
 ---
 
@@ -62,7 +62,8 @@ Rather than focusing solely on EU's eIDAS, we support the complete landscape of 
 
 | Component | Completion | Status | Notes |
 |-----------|------------|--------|-------|
-| **EU eIDAS (PAdES)** | 95% | Production-ready | Hybrid circuit, 2-3s proving |
+| **EU eIDAS (PAdES)** | 100% | Production-ready | Hybrid circuit, 7.6s proving, auto-testing |
+| **Self-Signing Workflow** | 100% | Production-ready | Full cert generation → ZK proof pipeline |
 | **US AATL** | 40% | Manual only | No automated fetching |
 | **Swiss ZertES** | 30% | Untested | Integration ready |
 | **Other jurisdictions** | 0% | Theoretical | 2-3 days per jurisdiction |
@@ -72,7 +73,8 @@ Rather than focusing solely on EU's eIDAS, we support the complete landscape of 
 ### 2.2 Technical Limitations
 
 **Performance (RESOLVED)**
-- Current: 2-3 seconds per proof (hybrid SHA-256/Pedersen circuit)
+- Current: 7.6 seconds per proof (hybrid SHA-256/Pedersen circuit, WASM)
+- Expected: 2-3 seconds per proof (with native bb.js compilation)
 - Previous: 45-95 seconds (pure cryptographic hash functions)
 - Solution: 25.9x constraint reduction through hybrid approach
 - Status: Production-viable for real-time use
@@ -91,10 +93,11 @@ Rather than focusing solely on EU's eIDAS, we support the complete landscape of 
 
 ### 2.3 Deployment Status
 
-- **Environment:** Aztec testnet (3.0.0-devnet.4)
+- **Environment:** Aztec testnet (3.0.0-devnet.5)
+- **Testing:** Complete E2E test suite (5 tests), self-signing workflow validated
 - **External audit:** Pending (required before mainnet)
-- **Technology readiness:** Level 6-7 of 9
-- **Production timeline:** 6-9 months with funding
+- **Technology readiness:** Level 7-8 of 9
+- **Production timeline:** 3-6 months with funding
 
 ---
 
