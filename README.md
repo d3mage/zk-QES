@@ -41,11 +41,13 @@ See [HYBRID-CIRCUIT-SUCCESS.md](./HYBRID-CIRCUIT-SUCCESS.md) for details.
 - Features: Full Pedersen/Poseidon optimization
 - Status: ✅ Tested and benchmarked
 
-**3. SHA-256 Circuit** ❌ **Too Large**
-- Path: `circuits/pades_ecdsa/`
-- Size: 6,759 opcodes, 79,732 bytes
-- Status: ❌ Exceeds CRS limit (65,537 bytes)
-- Note: Cannot generate proofs with current infrastructure
+**3. RSA-2048 Circuit** ⚠️ **Experimental**
+- Path: `circuits/pades_rsa/`
+- Size: 14,418 opcodes
+- Proving: ~1.5-2.5 minutes (estimated)
+- Status: ⚠️ Experimental - kept for research and benchmarking
+- Note: Not production-viable (5-10M constraints, 1-2 hour proofs estimated)
+- See `circuits/pades_rsa/README.md` for details
 
 ### Key Features
 - ✅ Zero-knowledge ECDSA P-256 signature verification
@@ -78,10 +80,10 @@ bash -i <(curl -s https://install.aztec.network)
 Install the correct version of the Aztec toolkit:
 
 ```bash
-aztec-up 3.0.0-devnet.4
+aztec-up 3.0.0-devnet.5
 ```
 
-**Note:** This project has been upgraded to **Aztec 3.0.0-devnet.4** with full compatibility.
+**Note:** This project has been upgraded to **Aztec 3.0.0-devnet.5** with full compatibility.
 
 ### Install Dependencies
 
@@ -107,13 +109,6 @@ nargo info
 cd circuits/pades_ecdsa_poseidon && nargo compile && cd ../..
 ```
 
-**For SHA-256 Circuit (will fail - too large):**
-```bash
-# This circuit exceeds CRS limits
-cd circuits/pades_ecdsa && nargo compile && cd ../..
-# Note: Compilation works but proving will fail
-```
-
 **For Aztec smart contract:**
 ```bash
 # Compile DocumentRegistry contract
@@ -132,7 +127,7 @@ aztec-postprocess-contract
 **For Aztec smart contract tests:**
 ```bash
 # Run all contract tests (includes TXE server)
-aztec test
+yarn test:nr
 
 # Expected output:
 # [document_registry] 3 tests passed
@@ -158,9 +153,11 @@ aztec start --sandbox
 
 ### Components
 
-1. **Noir Circuit** (`circuits/pades_ecdsa/`)
+1. **Noir Circuits**
+   - `circuits/pades_ecdsa_hybrid/` - Production (261 opcodes, SHA-256/Pedersen)
+   - `circuits/pades_ecdsa_poseidon/` - Baseline (597 opcodes, full Poseidon)
    - ECDSA P-256 signature verification
-   - Merkle tree membership proof (SHA-256 based, depth 8)
+   - Merkle tree membership proof (depth 8)
    - Document and artifact binding via public inputs
 
 2. **Merkle Toolchain** (`tools/merkle/`)
@@ -460,8 +457,10 @@ yarn e2e-test
 
 ```
 .
-├── circuits/pades_ecdsa/        # Noir ZK circuit
-│   └── src/main.nr              # ECDSA + Merkle verification + EU trust
+├── circuits/
+│   ├── pades_ecdsa_hybrid/      # Production circuit (SHA-256/Pedersen, 261 opcodes)
+│   ├── pades_ecdsa_poseidon/    # Baseline circuit (Poseidon, 597 opcodes)
+│   └── pades_rsa/               # Experimental RSA-2048 (not production-viable)
 ├── tools/
 │   ├── merkle/                  # Local trust list toolchain
 │   │   ├── build.ts             # Build Merkle tree
@@ -614,11 +613,12 @@ openssl x509 -in cert.pem -outform DER | openssl dgst -sha256 -hex
 
 **ALL TASKS COMPLETE**: 5/5 (100% ✅)
 
-**Latest Update (2025-11-10):** Successfully upgraded to **Aztec 3.0.0-devnet.4**
+**Latest Update (2025-11-14):** Successfully upgraded to **Aztec 3.0.0-devnet.5**
 - ✅ Contract migration complete
 - ✅ All tests passing (3/3)
 - ✅ Compilation working
-- See [checkpoint-aztec-3.0-upgrade.md](.wip/checkpoints/checkpoint-aztec-3.0-upgrade.md) for details
+- ✅ Removed redundant files (18 files cleaned up)
+- ✅ Fixed test configuration and version compatibility
 
 - ✅ **Task 1 & 2**: Core ZK Proof System (100%)
   - ✅ ECDSA P-256 ZK proofs

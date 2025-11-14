@@ -6,7 +6,7 @@
   "moduleNameMapper": {
     "^(\\.{1,2}/.*)\\.js$": "$1"
   },
-  "testRegex": "./src/.*\\.test\\.ts$",
-  "rootDir": "./src",
+  "testRegex": "./test/.*\\.test\\.ts$",
+  "rootDir": "./contracts/src",
   "testTimeout": 600000
 }
