@@ -3,15 +3,16 @@
  * e2e-test.ts
  *
  * End-to-end test for ZK Qualified Signature with EU Trust List.
- * Tests the complete pipeline, EU trust mode, and backward compatibility.
+ * Automatically fetches EU Trust List and tests both dual trust and local trust modes.
  *
  * Usage: yarn e2e-test
  *
  * Tests:
  *   1. Complete pipeline (signature extraction, ZK proof, verification)
  *   2. Manifest validation
- *   3. EU trust enabled mode (dual trust verification)
- *   4. Backward compatibility (local trust only mode)
+ *   3. EU Trust List setup (fetch LOTL, generate Merkle roots)
+ *   4. EU trust enabled mode (dual trust verification)
+ *   5. Backward compatibility (local trust only mode)
  */
 
 import fs from 'node:fs';
@@ -85,54 +86,64 @@ async function main() {
     console.log('✅ Manifest structure valid');
 
     console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('TEST 3: EU Trust Enabled Mode');
+    console.log('TEST 3: EU Trust List Setup');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
-    console.log('Checking EU Trust List files...');
-    // Check if EU Trust List files exist (optional - may not be set up)
-    const euRootExists = fs.existsSync('out/tl_root_eu.hex');
-    const euProofExists = fs.existsSync('out/eu_paths/06a02856c08dde5c6679377c06f6fe7be1855d586bd1448343db2736b1473cd3.json');
+    console.log('Fetching EU Trust List from official source...');
+    run('yarn eutl:fetch', 'Fetch EU LOTL');
+    verifyFile('tools/eutl/cache/lotl.xml', 'EU LOTL XML');
+    verifyFile('tools/eutl/cache/qualified_cas.json', 'EU certificate fingerprints');
 
-    if (!euRootExists || !euProofExists) {
-        console.log('⊘ EU Trust List files not found - skipping EU trust tests');
-        console.log('  (Run "yarn eutl:fetch" and "yarn eutl:root" to enable EU trust tests)\n');
-        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-        console.log('TEST 4: Backward Compatibility');
-        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
-        // Skip to backward compatibility test
-    } else {
-        verifyFile('out/tl_root_eu.hex', 'EU Trust List root');
-        verifyFile('out/eu_paths/06a02856c08dde5c6679377c06f6fe7be1855d586bd1448343db2736b1473cd3.json', 'EU Merkle proof for test signer');
-        console.log('✅ EU Trust List files present');
+    console.log('\nGenerating EU Trust List Merkle root...');
+    run('yarn eutl:root -- --snapshot tools/eutl/cache/snapshot.json --out out', 'Generate EU trust root (SHA-256)');
+    verifyFile('out/tl_root_eu.hex', 'EU Trust List root (SHA-256)');
+    verifyFile('out/eu_paths/06a02856c08dde5c6679377c06f6fe7be1855d586bd1448343db2736b1473cd3.json', 'EU Merkle proof');
 
-        console.log('\nGenerating proof with EU trust enabled...');
-        run('yarn prove -- --eu-trust', 'Generate ZK proof with EU trust');
-        verifyFile('out/proof.bin', 'Proof with EU trust');
-        verifyFile('out/manifest.json', 'Manifest with EU trust');
+    console.log('\nGenerating EU Trust List Poseidon Merkle root...');
+    run('yarn merkle-poseidon:build -- tools/eutl/cache/qualified_cas.json --out out', 'Build EU Pedersen tree');
 
-        console.log('\nValidating EU trust manifest...');
-        const euManifest = JSON.parse(fs.readFileSync('out/manifest.json', 'utf-8'));
-        if (!euManifest.eu_trust) {
-            throw new Error('EU trust object missing from manifest');
-        }
-        if (euManifest.eu_trust.enabled !== true) {
-            throw new Error('EU trust should be enabled in manifest');
-        }
-        // tl_root_eu is now stored as decimal Field string (not hex)
-        if (!euManifest.eu_trust.tl_root_eu || !/^\d+$/.test(euManifest.eu_trust.tl_root_eu)) {
-            throw new Error('Invalid EU trust root in manifest (must be decimal Field string)');
-        }
-        console.log('✅ EU trust manifest structure valid');
-        console.log(`   eu_trust.enabled: ${euManifest.eu_trust.enabled}`);
-        console.log(`   tl_root_eu: ${euManifest.eu_trust.tl_root_eu.substring(0, 16)}...`);
-
-        console.log('\nVerifying proof with dual trust...');
-        run('yarn verify', 'Verify proof with dual trust');
-        console.log('✅ Dual trust verification passed');
-    }
+    // Copy Poseidon files to EU trust locations
+    console.log('Setting up EU trust Poseidon files...');
+    execSync('cp out/tl_root_poseidon.txt out/tl_root_eu_poseidon.txt', { stdio: 'inherit' });
+    execSync('cp out/tl_root_poseidon.hex out/tl_root_eu_poseidon.hex', { stdio: 'inherit' });
+    execSync('cp out/tl_root_poseidon.json out/tl_root_eu_poseidon.json', { stdio: 'inherit' });
+    execSync('cp -r out/paths-poseidon out/eu_paths_poseidon', { stdio: 'inherit' });
+    console.log('✅ EU Trust List Poseidon files ready');
 
     console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('TEST 4: Backward Compatibility');
+    console.log('TEST 4: EU Trust Enabled Mode (Dual Trust)');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+
+    verifyFile('out/tl_root_eu_poseidon.txt', 'EU Trust List root (Poseidon)');
+    verifyFile('out/eu_paths_poseidon/06a02856c08dde5c6679377c06f6fe7be1855d586bd1448343db2736b1473cd3.json', 'EU Merkle proof (Poseidon)');
+
+    console.log('Generating proof with EU trust enabled...');
+    run('yarn prove -- --eu-trust', 'Generate ZK proof with EU trust');
+    verifyFile('out/proof.bin', 'Proof with EU trust');
+    verifyFile('out/manifest.json', 'Manifest with EU trust');
+
+    console.log('\nValidating EU trust manifest...');
+    const euManifest = JSON.parse(fs.readFileSync('out/manifest.json', 'utf-8'));
+    if (!euManifest.eu_trust) {
+        throw new Error('EU trust object missing from manifest');
+    }
+    if (euManifest.eu_trust.enabled !== true) {
+        throw new Error('EU trust should be enabled in manifest');
+    }
+    // tl_root_eu is now stored as decimal Field string (not hex)
+    if (!euManifest.eu_trust.tl_root_eu || !/^\d+$/.test(euManifest.eu_trust.tl_root_eu)) {
+        throw new Error('Invalid EU trust root in manifest (must be decimal Field string)');
+    }
+    console.log('✅ EU trust manifest structure valid');
+    console.log(`   eu_trust.enabled: ${euManifest.eu_trust.enabled}`);
+    console.log(`   tl_root_eu: ${euManifest.eu_trust.tl_root_eu.substring(0, 16)}...`);
+
+    console.log('\nVerifying proof with dual trust...');
+    run('yarn verify', 'Verify proof with dual trust');
+    console.log('✅ Dual trust verification passed');
+
+    console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('TEST 5: Backward Compatibility (Local Trust Only)');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
     console.log('Generating proof WITHOUT EU trust (Task 2 mode)...');
@@ -160,11 +171,12 @@ async function main() {
     console.log('╚════════════════════════════════════════════════════╝\n');
 
     console.log('Summary:');
-    console.log('  ✓ Full pipeline executed successfully');
-    console.log('  ✓ Manifest structure validated');
-    console.log('  ✓ EU trust enabled mode working');
-    console.log('  ✓ Backward compatibility maintained');
-    console.log('\n🎉 ZK Qualified Signature system is operational!\n');
+    console.log('  ✓ TEST 1: Full pipeline executed successfully');
+    console.log('  ✓ TEST 2: Manifest structure validated');
+    console.log('  ✓ TEST 3: EU Trust List fetched and set up');
+    console.log('  ✓ TEST 4: EU trust enabled mode (dual trust) working');
+    console.log('  ✓ TEST 5: Backward compatibility maintained (local trust only)');
+    console.log('\n🎉 ZK Qualified Signature system is fully operational!\n');
 }
 
 main().catch(err => {
