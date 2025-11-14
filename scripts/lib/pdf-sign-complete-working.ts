@@ -129,12 +129,20 @@ export async function signPdfComplete(
 
     console.log('  ✅ Key and certificate extracted');
 
-    // Step 5: Create CMS signature
+    // Step 5: Create CMS signature with correct signed attributes
     console.log('📦 Step 5: Creating CMS/PKCS#7 signature...');
     const cmsPath = `${tempDir}/signature.p7s`;
 
-    // Create detached CMS signature with signed attributes (CAdES-BES format)
-    execSync(`openssl cms -sign -in ${hashPath} -binary -outform DER -out ${cmsPath} -signer ${certPath} -inkey ${keyPath} -nodetach`, { stdio: 'pipe' });
+    // Extract ByteRange content and save to file for signing
+    const [r1Start, r1Len, r2Start, r2Len] = byteRange;
+    const range1 = pdfWithByteRange.slice(r1Start, r1Start + r1Len);
+    const range2 = pdfWithByteRange.slice(r2Start, r2Start + r2Len);
+    const byteRangeContent = Buffer.concat([range1, range2]);
+    const byteRangeContentPath = `${tempDir}/byterange_content.bin`;
+    await fs.writeFile(byteRangeContentPath, byteRangeContent);
+
+    // Create CMS signature in detached mode (messageDigest will be hash of ByteRange content)
+    execSync(`openssl cms -sign -in ${byteRangeContentPath} -binary -outform DER -out ${cmsPath} -signer ${certPath} -inkey ${keyPath}`, { stdio: 'pipe' });
 
     const cmsSignature = await fs.readFile(cmsPath);
     console.log(`  ✅ CMS signature created (${cmsSignature.length} bytes)`);
