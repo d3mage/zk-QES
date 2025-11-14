@@ -17,8 +17,9 @@ import { PDFDocument } from 'pdf-lib';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { execSync } from 'child_process';
-import { signPdfWithP12 } from './lib/sign-pdf-browser.js';
-import { signPdfSimple } from './lib/simple-pdf-signer.js';
+import { createPDF } from './lib/sign-pdf-complete.js';
+import { plainAddPlaceholder } from '@signpdf/placeholder-plain';
+import { signPdfComplete } from './lib/pdf-sign-complete-working.js';
 
 const OUT_DIR = './out';
 const TEST_DIR = './test-data';
@@ -152,30 +153,23 @@ async function createPKCS12(): Promise<string> {
 
 /**
  * Step 3: Add certificate to allowlist
- * Note: For now, we use the existing signed PDF's certificate fingerprint
- * since we're not actually signing with the self-signed cert (complex PDF signing)
  */
 async function addToAllowlist(fingerprint: string): Promise<void> {
   console.log('\n📋 Step 3: Adding certificate to allowlist...');
 
   const allowlistPath = path.join(TEST_DIR, 'allowlist.json');
 
-  // Use the fingerprint from the existing signed PDF
-  // (the one we know works with our test circuit)
-  const existingPdfFingerprint = '06a02856c08dde5c6679377c06f6fe7be1855d586bd1448343db2736b1473cd3';
-
-  console.log(`  ℹ️  Generated cert fingerprint: ${fingerprint.substring(0, 16)}...`);
-  console.log(`  ℹ️  Using existing PDF's cert fingerprint for proof: ${existingPdfFingerprint.substring(0, 16)}...`);
-  console.log(`  ℹ️  (Actual PDF signing with custom cert requires pdfsigner or similar tool)`);
+  console.log(`  ℹ️  Self-signed cert fingerprint: ${fingerprint.substring(0, 32)}...`);
 
   // Format expected by merkle/build.ts
   const allowlist = {
-    cert_fingerprints: [existingPdfFingerprint]
+    cert_fingerprints: [fingerprint]
   };
 
   await fs.writeFile(allowlistPath, JSON.stringify(allowlist, null, 2));
 
   console.log(`  ✅ Created allowlist: ${allowlistPath}`);
+  console.log(`  ✅ Added fingerprint: ${fingerprint}`);
 }
 
 /**
@@ -210,41 +204,39 @@ async function buildTrustList(): Promise<void> {
 }
 
 /**
- * Step 5: Sign PDF document with the certificate using pdfsigner tool
+ * Step 5: Sign PDF document with the self-signed certificate
  */
 async function signPDF(p12Path: string): Promise<string> {
-  console.log('\n✍️  Step 5: Signing PDF document with pdfsigner...');
+  console.log('\n✍️  Step 5: Signing PDF document with self-signed certificate...');
 
-  const pdfPath = path.join(TEST_DIR, 'document.pdf');
   const signedPdfPath = path.join(TEST_DIR, 'document_self_signed.pdf');
 
-  // Check if we have an existing PDF to sign, otherwise skip this step
   try {
-    await fs.access(pdfPath);
-    console.log(`  ✅ Found PDF to sign: ${pdfPath}`);
-  } catch (error) {
-    console.log(`  ℹ️  No PDF found at ${pdfPath}, using existing signed PDF`);
-    // Copy the existing signed PDF for testing
-    await fs.copyFile(path.join(TEST_DIR, 'document_signed.pdf'), signedPdfPath);
-    console.log(`  ✅ Using existing signed PDF: ${signedPdfPath}`);
-    return signedPdfPath;
-  }
+    // Create PDF
+    console.log('  📄 Creating PDF document...');
+    const pdfBuffer = await createPDF('ZK Qualified Signature Test Document\n\nSigned with self-generated ECDSA P-256 certificate');
+    console.log(`  ✅ PDF created (${pdfBuffer.length} bytes)`);
 
-  // Use pdfsigner to sign the PDF with our self-signed certificate
-  try {
-    console.log('  📝 Signing PDF with pdfsigner (Node.js)...');
+    // Add signature placeholder
+    console.log('  📝 Adding signature placeholder...');
+    const pdfWithPlaceholder = plainAddPlaceholder({
+      pdfBuffer,
+      reason: 'ZK Qualified Signature Test',
+      contactInfo: 'test@example.com',
+      name: 'Test Signer',
+      location: 'Test Location',
+    });
+    console.log(`  ✅ Placeholder added (${pdfWithPlaceholder.length} bytes)`);
 
-    const certPath = path.join(TEST_DIR, 'selfsigned_cert.pem');
-    const keyPath = path.join(TEST_DIR, 'selfsigned_key.pem');
+    // Sign using complete working signer
+    const signedPdf = await signPdfComplete(
+      pdfWithPlaceholder,
+      p12Path,
+      'example'
+    );
 
-    // Use pdfsigner (if available) or OpenSSL to sign
-    // For now, we'll use our existing signed PDF as reference
-    console.log('  ℹ️  PDF signing with self-signed cert requires pdfsigner or similar tool');
-    console.log('  ℹ️  For this test, we\'ll use the existing signed PDF to demonstrate extraction');
-
-    // Copy existing signed PDF
-    await fs.copyFile(path.join(TEST_DIR, 'document_signed.pdf'), signedPdfPath);
-    console.log(`  ✅ Using reference signed PDF: ${signedPdfPath}`);
+    await fs.writeFile(signedPdfPath, signedPdf);
+    console.log(`\n  ✅ PDF signed successfully: ${signedPdfPath}`);
 
     return signedPdfPath;
   } catch (error) {
@@ -307,15 +299,19 @@ async function generateProof(): Promise<void> {
       path.join(OUT_DIR, 'tl_root_poseidon.txt')
     );
 
-    // Get fingerprint from allowlist
+    // Get fingerprint from allowlist (same as certificate fingerprint)
     const allowlist = JSON.parse(await fs.readFile(path.join(TEST_DIR, 'allowlist.json'), 'utf-8'));
     const fingerprint = allowlist.cert_fingerprints[0];
     console.log(`  ℹ️  Using fingerprint from allowlist: ${fingerprint.substring(0, 16)}...`);
 
-    await fs.copyFile(
-      path.join(trustDir, 'paths-poseidon', `${fingerprint}.json`),
-      path.join(OUT_DIR, 'merkle_path_poseidon.json')
-    );
+    // Copy the Merkle proof to both possible locations (for compatibility)
+    const merkleProofPath = path.join(trustDir, 'paths-poseidon', `${fingerprint}.json`);
+    await fs.copyFile(merkleProofPath, path.join(OUT_DIR, 'merkle_path_poseidon.json'));
+
+    // Also copy to the out paths-poseidon directory for prove.ts to find
+    const outPathsDir = path.join(OUT_DIR, 'paths-poseidon');
+    await fs.mkdir(outPathsDir, { recursive: true });
+    await fs.copyFile(merkleProofPath, path.join(outPathsDir, `${fingerprint}.json`));
 
     console.log('  ✅ Copied Pedersen trust list files to out/');
 
@@ -383,12 +379,19 @@ async function main() {
     console.log('\n🎉 Complete workflow validated!');
 
     // Print next steps
-    console.log('\n📖 Browser Implementation Notes:');
-    console.log('  • For browser signing, use zgapdfsigner library');
-    console.log('  • zgapdfsigner uses pdf-lib + node-forge (browser-compatible)');
-    console.log('  • Install: yarn add zgapdfsigner');
-    console.log('  • ECDSA support depends on underlying crypto library');
-    console.log('  • WebCrypto API supports ECDSA P-256 natively');
+    console.log('\n📖 Implementation Notes:');
+    console.log('  • Certificate generation: ✅ Working (OpenSSL ECDSA P-256)');
+    console.log('  • Trust list generation: ✅ Working (Pedersen Merkle tree)');
+    console.log('  • PDF placeholder creation: ✅ Working (plainAddPlaceholder)');
+    console.log('  • PDF signing: ⚠️  Complex (requires ByteRange calculation)');
+    console.log('  • Signature extraction: ✅ Working (PKI.js CAdES parser)');
+    console.log('  • ZK proof generation: ✅ Working (hybrid circuit, 2-3s)');
+    console.log('  • ZK proof verification: ✅ Working');
+    console.log('\n💡 Next Steps:');
+    console.log('  • For production PDF signing, use dedicated tools like:');
+    console.log('    - jsSignPDF (full JavaScript implementation)');
+    console.log('    - @signpdf with proper ByteRange calculator');
+    console.log('    - Or server-side signing with pdfsigner/SignServer');
 
   } catch (error) {
     console.error('\n' + '═'.repeat(70));
