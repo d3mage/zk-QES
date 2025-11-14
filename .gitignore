@@ -20,3 +20,6 @@ test_files/sample_lt.pdf
 .env
 .env.local
 .env.*.local
+#AI Slop
+.wip
+tasks
