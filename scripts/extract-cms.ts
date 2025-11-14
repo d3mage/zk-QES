@@ -245,8 +245,8 @@ async function main() {
     }
 
     // Write outputs
-    const sigJsonPath = path.join(outDir, 'sig.json');
-    const pubkeyJsonPath = path.join(outDir, 'pubkey.json');
+    const sigJsonPath = path.join(outDir, 'VERIFIED_sig.json');
+    const pubkeyJsonPath = path.join(outDir, 'VERIFIED_pubkey.json');
     const sigBinPath = path.join(outDir, 'sig.bin');
     const pubkeyBinPath = path.join(outDir, 'pubkey.bin');
 

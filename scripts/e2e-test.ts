@@ -57,7 +57,7 @@ async function main() {
     verifyFile('out/doc_hash.bin', 'Document hash');
     verifyFile('out/doc_hash.hex', 'Document hash (hex)');
 
-    run('yarn extract-cades -- test-data/document_signed.pdf', 'Extract CAdES signature with PKI.js');
+    run('node --loader ts-node/esm scripts/extract-cades.ts test-data/document_signed.pdf', 'Extract CAdES signature with PKI.js');
     verifyFile('out/VERIFIED_pubkey.json', 'Public key');
     verifyFile('out/VERIFIED_sig.json', 'Signature');
     verifyFile('out/VERIFIED_signed_attrs_hash.bin', 'Signed attributes hash');
