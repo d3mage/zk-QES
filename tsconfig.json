@@ -19,7 +19,9 @@
     "resolveJsonModule": true,
     "composite": true,
     "skipLibCheck": true,
-    "jsx": "react-jsx"
+    "jsx": "react-jsx",
+    "allowImportingTsExtensions": true,
+    "noEmit": true
   },
   "include": ["src", "scripts/**/*", "src/**/*.json", "src/artifacts/*", "target/**/*", "config/config.ts"]
 }

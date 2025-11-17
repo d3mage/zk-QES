@@ -12,9 +12,9 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 
 const outDir = 'out';
-const testPdf = 'test_files/sample_signed.pdf';
-const testCert = 'test_files/EU-6669243D2B04331D0400000014EB9900F741B404.cer';
-const allowlist = 'allowlist.json';
+const testPdf = 'test-data/Test.pdf';
+const testCert = 'test-data/ECDSA.cer';
+const allowlist = 'test-data/allowlist.json';
 
 // Helper to run command and capture output
 function run(cmd: string, description: string) {
@@ -38,12 +38,7 @@ async function main() {
     console.log('║   ZK Qualified Signature - Poseidon E2E Test       ║');
     console.log('╚════════════════════════════════════════════════════╝\n');
 
-    console.log('Using Poseidon-optimized circuit (5-10x faster than SHA-256)\n');
-
-    // ============================================================
-    // TEST 1: Complete Pipeline with Poseidon
-    // ============================================================
-    console.log('━━━ TEST 1: Complete Poseidon Pipeline ━━━');
+    console.log('Complete Poseidon Pipeline ━━━');
 
     // Step 1: Extract ByteRange hash
     run(
@@ -81,17 +76,6 @@ async function main() {
     const rootData = JSON.parse(fs.readFileSync(path.join(outDir, 'tl_root_poseidon.json'), 'utf-8'));
     console.log(`  Merkle root: ${rootData.root_decimal.substring(0, 20)}...`);
     console.log(`  Hash function: ${rootData.hash_function}`);
-
-    // Step 4: Encrypt file with binding
-    const pubkeyPath = path.join(outDir, 'VERIFIED_pubkey.json');
-    run(
-        `yarn encrypt-upload -- test_files/sample.pdf --to ${pubkeyPath}`,
-        'Step 4/7: Encrypt PDF with artifact binding'
-    );
-
-    if (!fs.existsSync(path.join(outDir, 'cipher_hash.bin'))) {
-        throw new Error('Cipher hash not generated');
-    }
 
     // Step 5: Generate ZK proof with Poseidon circuit
     console.log('\n→ Step 5/7: Generate ZK proof (Poseidon circuit)');

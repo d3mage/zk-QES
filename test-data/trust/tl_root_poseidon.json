@@ -1,0 +1,7 @@
+{
+  "root_hex": "24709cef1d78f096ff45cccfcb4c273b8bfd9bcf89d88b3d56baa6445d70ac26",
+  "root_decimal": "16482232539213930011369694218339362439003670395131033660969519942575804427302",
+  "depth": 8,
+  "leaf_count": 1,
+  "hash_function": "Pedersen (Barretenberg/bb.js, guaranteed compatible with Noir std::hash::pedersen_hash)"
+}

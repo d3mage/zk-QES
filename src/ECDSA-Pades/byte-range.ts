@@ -1,13 +1,3 @@
-#!/usr/bin/env node
-/**
- * hash-byte-range.ts
- *
- * Extracts and computes the SHA-256 hash of a PAdES-signed PDF's ByteRange.
- * The ByteRange indicates which bytes of the PDF were signed.
- *
- * Usage: yarn hash-byte-range <pdf-path>
- */
-
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import path from 'node:path';
@@ -35,28 +25,11 @@ function parseByteRange(pdfBuffer: Buffer): number[] | null {
     ];
 }
 
-async function main() {
-    const pdfPath = process.argv[2];
+export async function hashByteRange(pdfBuffer: Buffer, isDump: boolean = false, outDir: string) {
 
-    if (!pdfPath) {
-        console.error('Usage: yarn hash-byte-range <pdf-path>');
-        console.error('Example: yarn hash-byte-range test_files/sample_signed.pdf');
-        process.exit(1);
-    }
-
-    if (!fs.existsSync(pdfPath)) {
-        console.error(`Error: File not found: ${pdfPath}`);
-        process.exit(1);
-    }
-
-    console.log(`Reading PDF: ${pdfPath}`);
-    const pdfBuffer = fs.readFileSync(pdfPath);
-
-    // Parse ByteRange
     const byteRange = parseByteRange(pdfBuffer);
     if (!byteRange) {
-        console.error('Error: /ByteRange not found in PDF');
-        process.exit(1);
+        throw new Error('Error: /ByteRange not found in PDF');
     }
 
     const [offset1, length1, offset2, length2] = byteRange;
@@ -64,38 +37,25 @@ async function main() {
     console.log(`  Part 1: bytes ${offset1} to ${offset1 + length1 - 1} (length ${length1})`);
     console.log(`  Part 2: bytes ${offset2} to ${offset2 + length2 - 1} (length ${length2})`);
 
-    // Extract the two byte ranges
     const part1 = pdfBuffer.subarray(offset1, offset1 + length1);
     const part2 = pdfBuffer.subarray(offset2, offset2 + length2);
 
     const combined = Buffer.concat([part1, part2]);
     console.log(`Combined length: ${combined.length} bytes`);
 
-    // Compute SHA-256
     const digest = sha256(combined);
     const digestHex = Buffer.from(digest).toString('hex');
-
     console.log(`\nSHA-256 digest: ${digestHex}`);
 
-    // Ensure output directory exists
-    const outDir = 'out';
-    if (!fs.existsSync(outDir)) {
-        fs.mkdirSync(outDir, { recursive: true });
+    if (isDump) {
+        const binPath = path.join(outDir, 'doc_hash.bin');
+        const hexPath = path.join(outDir, 'doc_hash.hex');
+
+        fs.writeFileSync(binPath, digest);
+        fs.writeFileSync(hexPath, digestHex);
+
+        console.log(`\nOutputs written:`);
+        console.log(`  Binary: ${binPath}`);
+        console.log(`  Hex:    ${hexPath}`);
     }
-
-    // Write outputs
-    const binPath = path.join(outDir, 'doc_hash.bin');
-    const hexPath = path.join(outDir, 'doc_hash.hex');
-
-    fs.writeFileSync(binPath, digest);
-    fs.writeFileSync(hexPath, digestHex);
-
-    console.log(`\nOutputs written:`);
-    console.log(`  Binary: ${binPath}`);
-    console.log(`  Hex:    ${hexPath}`);
 }
-
-main().catch(err => {
-    console.error('Error:', err);
-    process.exit(1);
-});

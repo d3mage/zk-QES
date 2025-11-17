@@ -1,33 +1,19 @@
-#!/usr/bin/env node
-/**
- * extract-cms.ts
- *
- * Extracts ECDSA signature (r, s) and public key (x, y) from a PAdES-signed PDF.
- * Parses the CMS SignedData structure and extracts the embedded certificate.
- *
- * Usage: yarn extract-cms <pdf-path>
- */
-
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
 
 interface SignatureData {
-    algorithm: string;
     r: Buffer;
     s: Buffer;
-    isRSA: boolean;
 }
 
 interface PublicKeyData {
-    algorithm: string;
-    curve: string;
     x: Buffer;
     y: Buffer;
 }
 
-function extractSignatureFromPDF(pdfBuffer: Buffer): Buffer | null {
+function extractCMSfromPDF(pdfBuffer: Buffer): Buffer | null {
     const pdfStr = pdfBuffer.toString('latin1');
 
     // Find /Contents <hex_string>
@@ -36,7 +22,6 @@ function extractSignatureFromPDF(pdfBuffer: Buffer): Buffer | null {
         return null;
     }
 
-    // Remove whitespace and convert hex to buffer
     const hexStr = match[1].replace(/\s+/g, '');
     return Buffer.from(hexStr, 'hex');
 }
@@ -65,12 +50,12 @@ function parseECDSASignature(derSig: Buffer): { r: Buffer; s: Buffer } {
         throw new Error('Invalid DER signature: expected INTEGER for r');
     }
     let rLen = derSig[offset++];
-    let r = derSig.slice(offset, offset + rLen);
+    let r = derSig.subarray(offset, offset + rLen);
     offset += rLen;
 
     // Remove leading zero if present (for positive integers)
     if (r[0] === 0x00 && r.length > 1) {
-        r = r.slice(1);
+        r = r.subarray(1);
     }
 
     // Parse s
@@ -78,11 +63,11 @@ function parseECDSASignature(derSig: Buffer): { r: Buffer; s: Buffer } {
         throw new Error('Invalid DER signature: expected INTEGER for s');
     }
     let sLen = derSig[offset++];
-    let s = derSig.slice(offset, offset + sLen);
+    let s = derSig.subarray(offset, offset + sLen);
 
     // Remove leading zero if present
     if (s[0] === 0x00 && s.length > 1) {
-        s = s.slice(1);
+        s = s.subarray(1);
     }
 
     // Pad to 32 bytes (P-256)
@@ -93,7 +78,7 @@ function parseECDSASignature(derSig: Buffer): { r: Buffer; s: Buffer } {
             buf.copy(padded, 32 - buf.length);
             return padded;
         }
-        return buf.slice(-32); // Take last 32 bytes if longer
+        return buf.subarray(-32); // Take last 32 bytes if longer
     };
 
     return {
@@ -103,20 +88,10 @@ function parseECDSASignature(derSig: Buffer): { r: Buffer; s: Buffer } {
 }
 
 function extractSignatureFromCMS(cmsBuffer: Buffer): SignatureData {
-    // Parse CMS SignedData to extract signature
-    // For simplicity, we'll use a basic approach to find the signature value
-
     // Look for signature algorithm OID
     const ecdsaWithSHA256OID = Buffer.from([0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x04, 0x03, 0x02]);
-    const isECDSA = cmsBuffer.includes(ecdsaWithSHA256OID);
-
-    if (!isECDSA) {
-        return {
-            algorithm: 'RSA',
-            r: Buffer.alloc(0),
-            s: Buffer.alloc(0),
-            isRSA: true
-        };
+    if (!cmsBuffer.includes(ecdsaWithSHA256OID)) {
+        throw new Error('Error: CMS is not ECDSA');
     }
 
     // Find the OCTET STRING containing the signature
@@ -141,15 +116,13 @@ function extractSignatureFromCMS(cmsBuffer: Buffer): SignatureData {
     }
 
     const sigLen = cmsBuffer[sigStart + 1];
-    const derSig = cmsBuffer.slice(sigStart, sigStart + 2 + sigLen);
+    const derSig = cmsBuffer.subarray(sigStart, sigStart + 2 + sigLen);
 
     const { r, s } = parseECDSASignature(derSig);
 
     return {
-        algorithm: 'ECDSA-SHA256',
         r,
-        s,
-        isRSA: false
+        s
     };
 }
 
@@ -161,7 +134,6 @@ function extractCertificateFromCMS(cmsBuffer: Buffer): Buffer {
     const tempCertDerFile = '/tmp/cert_temp.der';
 
     try {
-        // Write CMS to temp file
         fs.writeFileSync(tempCmsFile, cmsBuffer);
 
         // Extract certificate using openssl
@@ -170,17 +142,14 @@ function extractCertificateFromCMS(cmsBuffer: Buffer): Buffer {
         // Convert PEM to DER
         execSync(`openssl x509 -in ${tempCertFile} -outform DER -out ${tempCertDerFile} 2>/dev/null`);
         
-        // Read the DER certificate
         const certBuffer = fs.readFileSync(tempCertDerFile);
 
-        // Clean up temp files
         fs.unlinkSync(tempCmsFile);
         fs.unlinkSync(tempCertFile);
         fs.unlinkSync(tempCertDerFile);
 
         return certBuffer;
     } catch (error) {
-        // Clean up temp files on error
         try {
             if (fs.existsSync(tempCmsFile)) fs.unlinkSync(tempCmsFile);
             if (fs.existsSync(tempCertFile)) fs.unlinkSync(tempCertFile);
@@ -192,15 +161,11 @@ function extractCertificateFromCMS(cmsBuffer: Buffer): Buffer {
 }
 
 function extractPublicKey(certBuffer: Buffer): PublicKeyData {
-    // Use crypto module to parse X.509 certificate
     const certPem = `-----BEGIN CERTIFICATE-----\n${certBuffer.toString('base64').match(/.{1,64}/g)?.join('\n')}\n-----END CERTIFICATE-----`;
 
     const x509 = new crypto.X509Certificate(certPem);
 
-    // Extract public key
     const pubKeyObj = x509.publicKey;
-
-    // Export as DER to parse the key
     const pubKeyDer = pubKeyObj.export({ type: 'spki', format: 'der' });
 
     // For EC keys, the public key is in uncompressed format: 0x04 || x || y
@@ -217,93 +182,55 @@ function extractPublicKey(certBuffer: Buffer): PublicKeyData {
         throw new Error('EC public key not found in certificate');
     }
 
-    const uncompressed = pubKeyDer.slice(keyStart, keyStart + 65);
+    const uncompressed = pubKeyDer.subarray(keyStart, keyStart + 65);
     if (uncompressed[0] !== 0x04 || uncompressed.length !== 65) {
         throw new Error('Invalid EC public key format');
     }
 
-    const x = uncompressed.slice(1, 33);
-    const y = uncompressed.slice(33, 65);
+    const x = uncompressed.subarray(1, 33);
+    const y = uncompressed.subarray(33, 65);
 
     return {
-        algorithm: 'EC',
-        curve: 'P-256',
         x,
         y
     };
 }
 
-async function main() {
-    const pdfPath = process.argv[2];
-
-    if (!pdfPath) {
-        console.error('Usage: yarn extract-cms <pdf-path>');
-        console.error('Example: yarn extract-cms test-data/Test.pdf');
-        console.error('\nThis tool extracts the ECDSA signature and certificate embedded in a PAdES-signed PDF.');
-        process.exit(1);
-    }
-
-    console.log(`Reading PDF: ${pdfPath}`);
-    const pdfBuffer = fs.readFileSync(pdfPath);
-
-    // Extract CMS data from PDF
-    const cmsBuffer = extractSignatureFromPDF(pdfBuffer);
+export async function extractSignatureFromPDF(pdfBuffer: Buffer, outDir: string) {
+    const cmsBuffer = extractCMSfromPDF(pdfBuffer);
     if (!cmsBuffer) {
-        console.error('Error: CMS signature not found in PDF');
-        process.exit(1);
+        throw new Error('Error: CMS not found in PDF');
     }
 
-    console.log(`CMS signature length: ${cmsBuffer.length} bytes`);
+    console.log(`CMS length: ${cmsBuffer.length} bytes`);
 
-    // Extract signature
     const sigData = extractSignatureFromCMS(cmsBuffer);
-    console.log(`Signature algorithm: ${sigData.algorithm}`);
+    console.log(`  r (32 bytes): ${sigData.r.toString('hex')}`);
+    console.log(`  s (32 bytes): ${sigData.s.toString('hex')}`);
 
-    if (sigData.isRSA) {
-        console.warn('WARNING: Signature is RSA, not ECDSA!');
-        console.warn('For ZK proof, you will need to use a separate ECDSA signature.');
-    } else {
-        console.log(`  r (32 bytes): ${sigData.r.toString('hex')}`);
-        console.log(`  s (32 bytes): ${sigData.s.toString('hex')}`);
-    }
-
-    // Extract certificate from CMS
     console.log(`\nExtracting certificate from CMS...`);
     const certBuffer = extractCertificateFromCMS(cmsBuffer);
     console.log(`Certificate extracted (${certBuffer.length} bytes)`);
 
-    // Extract public key from certificate
     const pubKeyData = extractPublicKey(certBuffer);
-    console.log(`\nPublic key algorithm: ${pubKeyData.algorithm}`);
-    console.log(`Curve: ${pubKeyData.curve}`);
     console.log(`  x (32 bytes): ${pubKeyData.x.toString('hex')}`);
     console.log(`  y (32 bytes): ${pubKeyData.y.toString('hex')}`);
 
-    // Ensure output directory exists
-    const outDir = 'out';
-    if (!fs.existsSync(outDir)) {
-        fs.mkdirSync(outDir, { recursive: true });
-    }
-
     // Write outputs
-    const sigJsonPath = path.join(outDir, 'VERIFIED_sig.json');
-    const pubkeyJsonPath = path.join(outDir, 'VERIFIED_pubkey.json');
-    const sigBinPath = path.join(outDir, 'VERIFIED_sig.bin');
-    const pubkeyBinPath = path.join(outDir, 'VERIFIED_pubkey.bin');
-    const certDerPath = path.join(outDir, 'cms_embedded_cert.der');
-    const certPemPath = path.join(outDir, 'cms_embedded_cert.pem');
+    const sigJsonPath = path.join(outDir, 'sig.json');
+    const pubkeyJsonPath = path.join(outDir, 'pubkey.json');
+    const sigBinPath = path.join(outDir, 'sig.bin');
+    const pubkeyBinPath = path.join(outDir, 'pubkey.bin');
+    const certDerPath = path.join(outDir, 'cert.der');
+    const certPemPath = path.join(outDir, 'cert.pem');
 
     fs.writeFileSync(sigJsonPath, JSON.stringify({
-        algorithm: sigData.algorithm,
-        isRSA: sigData.isRSA,
         r: sigData.r.toString('hex'),
         s: sigData.s.toString('hex'),
         signature: Buffer.concat([sigData.r, sigData.s]).toString('hex')
     }, null, 2));
 
     fs.writeFileSync(pubkeyJsonPath, JSON.stringify({
-        algorithm: pubKeyData.algorithm,
-        curve: pubKeyData.curve,
         x: pubKeyData.x.toString('hex'),
         y: pubKeyData.y.toString('hex')
     }, null, 2));
@@ -311,7 +238,6 @@ async function main() {
     fs.writeFileSync(sigBinPath, Buffer.concat([sigData.r, sigData.s]));
     fs.writeFileSync(pubkeyBinPath, Buffer.concat([pubKeyData.x, pubKeyData.y]));
 
-    // Save certificate in both DER and PEM formats
     fs.writeFileSync(certDerPath, certBuffer);
     const certPem = `-----BEGIN CERTIFICATE-----\n${certBuffer.toString('base64').match(/.{1,64}/g)?.join('\n')}\n-----END CERTIFICATE-----`;
     fs.writeFileSync(certPemPath, certPem);
@@ -324,8 +250,3 @@ async function main() {
     console.log(`  ${certDerPath} (certificate in DER format)`);
     console.log(`  ${certPemPath} (certificate in PEM format)`);
 }
-
-main().catch(err => {
-    console.error('Error:', err.message);
-    process.exit(1);
-});
