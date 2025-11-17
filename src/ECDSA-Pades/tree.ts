@@ -105,7 +105,6 @@ function getMerkleProof(layers: bigint[][], index: number): bigint[] {
     const proof: bigint[] = [];
     let currentIndex = index;
 
-    // Start from leaf layer (bottom)
     for (let level = 0; level < layers.length - 1; level++) {
         const layer = layers[level];
         const isRightChild = currentIndex % 2 === 1;
@@ -120,7 +119,17 @@ function getMerkleProof(layers: bigint[][], index: number): bigint[] {
     return proof;
 }
 
-export async function createMerkleTreeFromAllowlist(allowlist: Allowlist, outDir: string) {
+export async function createMerkleTreeFromAllowlist(allowlist: Allowlist, outDir: string, isDump: boolean = false): Promise<{
+    root: string;
+    proofs: Array<{
+        fingerprint: string;
+        index: number;
+        merkle_path_hex: string[];
+        merkle_path_decimal: string[];
+        root_hex: string;
+        root_decimal: string;
+    }>;
+}> {
     console.log('Initializing Barretenberg...');
     const bbApi = await Barretenberg.initSingleton({
         threads: 4
@@ -136,9 +145,8 @@ export async function createMerkleTreeFromAllowlist(allowlist: Allowlist, outDir
 
     const leaves = allowlist.cert_fingerprints.map(hexToField);
 
-    // Build tree
     console.log('\nBuilding Merkle tree with Pedersen hash (Barretenberg native/async)...');
-    const { root, layers } = await buildMerkleTree(bbApi,leaves);
+    const { root, layers } = await buildMerkleTree(bbApi, leaves);
 
     const depth = layers.length - 1;
     console.log(`\nTree built successfully:`);
@@ -147,26 +155,11 @@ export async function createMerkleTreeFromAllowlist(allowlist: Allowlist, outDir
     console.log(`  Depth: ${depth}`);
     console.log(`  Leaves: ${leaves.length}`);
 
-    const pathsDir = path.join(outDir, 'tree-poseidon');
-    if (!fs.existsSync(pathsDir)) {
-        fs.mkdirSync(pathsDir, { recursive: true });
-    }
-
     const rootHex = fieldToHex(root);
     const rootDecimal = fieldToDecimal(root);
 
-    fs.writeFileSync(path.join(outDir, 'tl_root_poseidon.hex'), rootHex);
-    fs.writeFileSync(path.join(outDir, 'tl_root_poseidon.txt'), rootDecimal);
-    fs.writeFileSync(path.join(outDir, 'tl_root_poseidon.json'), JSON.stringify({
-        root_hex: rootHex,
-        root_decimal: rootDecimal,
-        depth,
-        leaf_count: leaves.length,
-        hash_function: 'Pedersen (Barretenberg/bb.js, guaranteed compatible with Noir std::hash::pedersen_hash)'
-    }, null, 2));
-
-    // Generate and save proofs for each fingerprint
     console.log('\nGenerating inclusion proofs...');
+    const proofs = [];
     for (let i = 0; i < allowlist.cert_fingerprints.length; i++) {
         const fingerprint = allowlist.cert_fingerprints[i];
         const proof = getMerkleProof(layers, i);
@@ -180,21 +173,35 @@ export async function createMerkleTreeFromAllowlist(allowlist: Allowlist, outDir
             root_decimal: rootDecimal
         };
 
-        const filename = `${fingerprint}.json`;
-        fs.writeFileSync(path.join(pathsDir, filename), JSON.stringify(proofData, null, 2));
+        proofs.push(proofData);
     }
 
     console.log(`✓ ${allowlist.cert_fingerprints.length} inclusion proofs generated`);
-    console.log(`\nOutputs saved to ${outDir}/:`);
-    console.log(`  - tl_root_poseidon.hex (hex format)`);
-    console.log(`  - tl_root_poseidon.txt (decimal format for Noir)`);
-    console.log(`  - tl_root_poseidon.json (metadata)`);
-    console.log(`  - paths-poseidon/*.json (inclusion proofs)`);
+
+    if (isDump) {
+        const pathsDir = path.join(outDir, 'tree-poseidon');
+        if (!fs.existsSync(pathsDir)) {
+            fs.mkdirSync(pathsDir, { recursive: true });
+        }
+
+        fs.writeFileSync(path.join(outDir, 'tl_root_poseidon.txt'), rootDecimal);
+
+        for (const proofData of proofs) {
+            const filename = `${proofData.fingerprint}.json`;
+            fs.writeFileSync(path.join(pathsDir, filename), JSON.stringify(proofData, null, 2));
+        }
+
+        console.log(`\nOutputs saved to ${outDir}/:`);
+        console.log(`  - tl_root_poseidon.txt`);
+        console.log(`  - tree-poseidon/*.json`);
+    }
+
     console.log('\n✅ Done!');
 
     await Barretenberg.destroySingleton();
+
+    return {
+        root: rootDecimal,
+        proofs
+    };
 }
-
-// export async const loadLeaf(): Promise<> {
-
-// }

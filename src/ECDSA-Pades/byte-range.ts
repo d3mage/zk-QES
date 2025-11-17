@@ -21,7 +21,7 @@ function parseByteRange(pdfBuffer: Buffer): number[] | null {
     ];
 }
 
-export async function getByteRangeHash(pdfBuffer: Buffer, isDump: boolean = false, outDir: string): Promise<string> {
+export async function getByteRangeHash(pdfBuffer: Buffer, isDump: boolean = false, outDir: string = 'out'): Promise<string> {
 
     const byteRange = parseByteRange(pdfBuffer);
     if (!byteRange) {
@@ -45,14 +45,11 @@ export async function getByteRangeHash(pdfBuffer: Buffer, isDump: boolean = fals
 
     if (isDump) {
         const binPath = path.join(outDir, 'doc_hash.bin');
-        // const hexPath = path.join(outDir, 'doc_hash.hex');
 
         fs.writeFileSync(binPath, digest);
-        // fs.writeFileSync(hexPath, digestHex);
 
         console.log(`\nOutputs written:`);
         console.log(`  Binary: ${binPath}`);
-        // console.log(`  Hex:    ${hexPath}`);
     }
     return digestHex;
 }

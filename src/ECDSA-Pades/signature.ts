@@ -1,8 +1,8 @@
 import fs from 'node:fs';
-import crypto from 'node:crypto';
 import path from 'node:path';
 import * as asn1js from 'asn1js';
 import * as pkijs from 'pkijs';
+import { sha256 } from './utils.ts';
 
 interface SignatureData {
     r: Buffer;
@@ -51,7 +51,7 @@ function parseCMSWithPKIjs(cmsBuffer: Buffer): {
         value: signerInfo.signedAttrs.attributes.map((attr: any) => attr.toSchema())
     });
     const signedAttrsForSigning = attrsForSigning.toBER();
-    const signedAttrsHash = crypto.createHash('sha256').update(Buffer.from(signedAttrsForSigning)).digest();
+    const signedAttrsHash = Buffer.from(sha256(new Uint8Array(signedAttrsForSigning)));
 
     const signatureValue = Buffer.from(signerInfo.signature.valueBlock.valueHex);
     const sigAsn1 = asn1js.fromBER(signatureValue);
@@ -124,36 +124,32 @@ export async function extractSignatureFromPDF(pdfBuffer: Buffer, outDir: string,
     console.log(`  y (32 bytes): ${publicKey.y.toString('hex')}`);
     console.log(`\nSigned Attrs Hash: ${signedAttrsHash.toString('hex')}`);
 
-    const sigJsonPath = path.join(outDir, 'sig.json');
-    const pubkeyJsonPath = path.join(outDir, 'pubkey.json');
-    const sigBinPath = path.join(outDir, 'sig.bin');
-    const pubkeyBinPath = path.join(outDir, 'pubkey.bin');
-    const certDerPath = path.join(outDir, 'cert.der');
-    const signedAttrsHashPath = path.join(outDir, 'signed_attrs_hash.bin');
+    if (isDump) {
+        const sigJsonPath = path.join(outDir, 'sig.json');
+        const pubkeyJsonPath = path.join(outDir, 'pubkey.json');
+        const certDerPath = path.join(outDir, 'cert.der');
+        const signedAttrsHashPath = path.join(outDir, 'signed_attrs_hash.bin');
 
-    fs.writeFileSync(sigJsonPath, JSON.stringify({
-        r: signature.r.toString('hex'),
-        s: signature.s.toString('hex'),
-        signature: Buffer.concat([signature.r, signature.s]).toString('hex')
-    }, null, 2));
+        fs.writeFileSync(sigJsonPath, JSON.stringify({
+            r: signature.r.toString('hex'),
+            s: signature.s.toString('hex'),
+            signature: Buffer.concat([signature.r, signature.s]).toString('hex')
+        }, null, 2));
 
-    fs.writeFileSync(pubkeyJsonPath, JSON.stringify({
-        x: publicKey.x.toString('hex'),
-        y: publicKey.y.toString('hex')
-    }, null, 2));
+        fs.writeFileSync(pubkeyJsonPath, JSON.stringify({
+            x: publicKey.x.toString('hex'),
+            y: publicKey.y.toString('hex')
+        }, null, 2));
 
-    fs.writeFileSync(sigBinPath, Buffer.concat([signature.r, signature.s]));
-    fs.writeFileSync(pubkeyBinPath, Buffer.concat([publicKey.x, publicKey.y]));
-    fs.writeFileSync(certDerPath, certificate);
-    fs.writeFileSync(signedAttrsHashPath, signedAttrsHash);
+        fs.writeFileSync(certDerPath, certificate);
+        fs.writeFileSync(signedAttrsHashPath, signedAttrsHash);
 
-    console.log(`\nOutputs written:`);
-    console.log(`  ${sigJsonPath}`);
-    console.log(`  ${pubkeyJsonPath}`);
-    console.log(`  ${sigBinPath} (r || s, 64 bytes)`);
-    console.log(`  ${pubkeyBinPath} (x || y, 64 bytes)`);
-    console.log(`  ${certDerPath} (certificate in DER format)`);
-    console.log(`  ${signedAttrsHashPath} (signedAttrs hash)`);
+        console.log(`\nOutputs written:`);
+        console.log(`  ${sigJsonPath}`);
+        console.log(`  ${pubkeyJsonPath}`);
+        console.log(`  ${certDerPath}`);
+        console.log(`  ${signedAttrsHashPath}`);
+    }
 
     return {
         signature,
