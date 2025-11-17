@@ -33,16 +33,10 @@ fn main(
     signer_fpr: pub Field,            // Signer fingerprint as Field (Pedersen leaf)
     tl_root: pub Field,               // Merkle root of local allow-list (Pedersen hash)
 
-    // EU Trust List support (Pedersen-optimized)
-    eu_trust_enabled: pub bool,       // Feature flag for EU trust verification
-    tl_root_eu: pub Field,            // Merkle root of EU qualified CAs (Pedersen)
-
     // Private inputs (Pedersen-optimized)
     signature: [u8; 64],              // Signature (r || s, big-endian)
     merkle_path: [Field; 8],          // Merkle inclusion path (depth 8, Pedersen hashes)
     index: Field,                     // Leaf index in local tree
-    eu_merkle_path: [Field; 8],       // Merkle inclusion path for EU trust list
-    eu_index: Field                   // Leaf index in EU tree
 ) {
     // 1. Verify ECDSA P-256 signature over doc_hash
     // UNCHANGED: Still uses SHA-256 doc_hash from PDF signature
@@ -56,12 +50,6 @@ fn main(
     let computed_root = compute_merkle_root_pedersen(signer_fpr, index, merkle_path);
     assert(computed_root == tl_root, "Signer not in local allow-list");
 
-    // 3. Optional: Verify signer is also in EU Trust List (Pedersen)
-    // OPTIMIZED: Same Pedersen optimization for EU trust verification
-    if eu_trust_enabled {
-        let computed_eu_root = compute_merkle_root_pedersen(signer_fpr, eu_index, eu_merkle_path);
-        assert(computed_eu_root == tl_root_eu, "Signer not in EU Trust List");
-    }
 
     // Note: artifact_hash binding removed for simplicity in this test
     // Can be added back as public Field input if needed
@@ -112,36 +100,4 @@ fn compute_merkle_root_pedersen(
     }
 
     current
-}
-
-// Helper: Convert 32-byte array to Field (if needed for compatibility)
-// Not used in main circuit but useful for tooling
-fn bytes_to_field(bytes: [u8; 32]) -> Field {
-    let mut result: Field = 0;
-    let mut multiplier: Field = 1;
-
-    // Process bytes in reverse (little-endian accumulation from big-endian input)
-    for i in 0..32 {
-        let byte_idx = 31 - i;
-        result = result + (bytes[byte_idx] as Field) * multiplier;
-        multiplier = multiplier * 256;
-    }
-
-    result
-}
-
-// Helper: Convert Field to 32-byte array (if needed for compatibility)
-// Not used in main circuit but useful for tooling
-fn field_to_bytes(field: Field) -> [u8; 32] {
-    let mut bytes = [0; 32];
-    let mut value = field;
-
-    // Convert field to bytes (big-endian)
-    for i in 0..32 {
-        let byte_idx = 31 - i;
-        bytes[byte_idx] = (value as u8);
-        value = value / 256;
-    }
-
-    bytes
 }

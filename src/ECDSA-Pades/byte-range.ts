@@ -1,10 +1,6 @@
 import fs from 'node:fs';
-import crypto from 'node:crypto';
 import path from 'node:path';
-
-function sha256(buf: Uint8Array): Uint8Array {
-    return new Uint8Array(crypto.createHash('sha256').update(buf).digest());
-}
+import { sha256 } from './utils.ts';
 
 function parseByteRange(pdfBuffer: Buffer): number[] | null {
     const pdfStr = pdfBuffer.toString('latin1');
@@ -25,7 +21,7 @@ function parseByteRange(pdfBuffer: Buffer): number[] | null {
     ];
 }
 
-export async function hashByteRange(pdfBuffer: Buffer, isDump: boolean = false, outDir: string) {
+export async function getByteRangeHash(pdfBuffer: Buffer, isDump: boolean = false, outDir: string): Promise<string> {
 
     const byteRange = parseByteRange(pdfBuffer);
     if (!byteRange) {
@@ -49,13 +45,14 @@ export async function hashByteRange(pdfBuffer: Buffer, isDump: boolean = false, 
 
     if (isDump) {
         const binPath = path.join(outDir, 'doc_hash.bin');
-        const hexPath = path.join(outDir, 'doc_hash.hex');
+        // const hexPath = path.join(outDir, 'doc_hash.hex');
 
         fs.writeFileSync(binPath, digest);
-        fs.writeFileSync(hexPath, digestHex);
+        // fs.writeFileSync(hexPath, digestHex);
 
         console.log(`\nOutputs written:`);
         console.log(`  Binary: ${binPath}`);
-        console.log(`  Hex:    ${hexPath}`);
+        // console.log(`  Hex:    ${hexPath}`);
     }
+    return digestHex;
 }

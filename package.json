@@ -8,8 +8,6 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "fees": "node --loader ts-node/esm scripts/fees.ts",
-    "fees::testnet": "AZTEC_ENV=testnet node --loader ts-node/esm scripts/fees.ts",
     "clean": "rm -rf ./contracts/src/artifacts ./contracts/target",
     "clear-store": "rm -rf ./store",
     "codegen": "aztec codegen contracts/target --outdir contracts/src/artifacts",
@@ -17,8 +15,6 @@
     "compile:circuit:poseidon": "cd circuits/pades_ecdsa_poseidon && nargo compile",
     "compile:circuit:hybrid": "cd circuits/pades_ecdsa_hybrid && nargo compile",
     "hash-byte-range": "node --loader ts-node/esm scripts/hash-byte-range.ts",
-    "extract-cms": "node --loader ts-node/esm scripts/extract-cms.ts",
-    "extract-cades": "npx tsx scripts/extract-cades.ts",
     "prove": "node --loader ts-node/esm scripts/prove.ts",
     "prove:native": "node --loader ts-node/esm scripts/prove-native.ts",
     "verify": "node --loader ts-node/esm scripts/verify.ts",
@@ -26,10 +22,6 @@
     "merkle:prove": "node --loader ts-node/esm tools/merkle/prove.ts",
     "merkle-poseidon:build": "node --loader ts-node/esm tools/merkle-poseidon/build.ts",
     "merkle-poseidon:prove": "node --loader ts-node/esm tools/merkle-poseidon/prove.ts",
-    "eutl:fetch": "node --loader ts-node/esm tools/eutl/fetch.ts",
-    "eutl:root": "node --loader ts-node/esm tools/eutl/root.ts",
-    "pades:certify": "node --loader ts-node/esm scripts/pades-certify.ts",
-    "pades:timestamp": "node --loader ts-node/esm scripts/pades-timestamp.ts",
     "pades:lt": "node --loader ts-node/esm scripts/pades-lt.ts",
     "e2e-test": "node --loader ts-node/esm scripts/e2e-test.ts",
     "e2e-test-poseidon": "node --loader ts-node/esm scripts/e2e-test-poseidon.ts",
@@ -40,7 +32,8 @@
     "test:js": "rm -rf store/pxe && NODE_NO_WARNINGS=1 node --experimental-vm-modules $(yarn bin jest) --no-cache --runInBand --config jest.integration.config.json",
     "test:nr": "cd contracts && VERSION=3.0.0-devnet.5 aztec test",
     "update": "aztec update --contract contracts && ./.github/scripts/update_contract.sh $(grep -oP 'tag\\s*=\\s*\"\\K[^\"]+' \"contracts/Nargo.toml\" | head -1) && yarn && yarn update-readme-version",
-    "update-readme-version": "node ./.github/scripts/update-readme-version.js"
+    "update-readme-version": "node ./.github/scripts/update-readme-version.js",
+    "cclean": "rm -rf src/ECDSA-Pades/out*"
   },
   "dependencies": {
     "@aztec/accounts": "3.0.0-devnet.5",
