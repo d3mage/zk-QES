@@ -1,7 +1,5 @@
 use dep::std::ecdsa_secp256r1::verify_signature;
 
-// Pedersen version of pades_ecdsa circuit
-
 fn main(
     doc_hash: pub [u8; 32],           // SHA-256 digest of PDF ByteRange
 
@@ -16,7 +14,6 @@ fn main(
     signature: [u8; 64],              // Signature (r || s, big-endian)
     merkle_path: [Field; 8],          // Merkle inclusion path (depth 8, Pedersen hashes)
     index: Field,                     // Leaf index in local tree
-
 ) {
     // 1. Verify ECDSA P-256 signature over doc_hash
     // ECDSA still uses byte arrays (no change here)
@@ -29,29 +26,34 @@ fn main(
 }
 
 // Compute Merkle root using Pedersen
+// Parameters:
+// - leaf: Signer fingerprint as Field (SHA-256 cert hash converted to Field)
+// - index: Position in the tree (0-255 for depth 8)
+// - path: Array of sibling hashes from leaf to root
+//
+// Returns: Merkle root as Field
 fn compute_merkle_root_pedersen(
     leaf: Field,
     index: Field,
     path: [Field; 8]
 ) -> Field {
     let mut current = leaf;
-    let mut idx = index;
+    let mut idx = index as u64;
 
     for i in 0..8 {
         let sibling = path[i];
 
         // Determine if current is left or right child
-        let is_right = (idx as u64 & 1) != 0;
+        let is_right = (idx & 1) != 0;
 
-        // Uses Pedersen for simplicity and compatibility
         current = if is_right {
             std::hash::pedersen_hash([sibling, current])
         } else {
             std::hash::pedersen_hash([current, sibling])
         };
 
-        // Move to next level (divide index by 2)
-        idx = idx / 2;
+        // Move to parent node
+        idx = idx >> 1;
     }
 
     current

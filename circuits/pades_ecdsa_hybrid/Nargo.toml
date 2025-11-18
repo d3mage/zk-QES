@@ -1,9 +1,0 @@
-[package]
-name = "pades_ecdsa_hybrid"
-type = "bin"
-authors = [""]
-compiler_version = ">=0.18.0"
-
-[dependencies]
-# No external dependencies - uses Noir stdlib only
-# Hybrid approach: SHA-256 for document hash (already provided), Pedersen for Merkle trees

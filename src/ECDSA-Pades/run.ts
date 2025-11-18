@@ -290,9 +290,9 @@ async function verifyProof(proofResult: ProofResult, circuitPath: string, expect
 }
 
 async function main() {
-    const pdfPath = '../../examples/ECDSA/Test.pdf';
+    const pdfPath = '../../examples/ECDSA/ECDSA.pdf';
     const allowlistPath = 'allowlist.json';
-    const circuitPath = '../../circuits/pades_ecdsa_hybrid';
+    const circuitPath = '../../circuits/pades_ecdsa_pedersen';
     const isDump = false;
     const outDir = 'out';
 
