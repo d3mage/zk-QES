@@ -5,7 +5,7 @@ import { UltraHonkBackend as BarretenbergBackend } from '@aztec/bb.js';
 import { getByteRangeHash } from "./byte-range.ts";
 import { extractSignatureFromPDF } from './signature.ts';
 import { createMerkleTreeFromAllowlist } from './tree.ts';
-import { sha256 } from './utils.ts';
+import { sha256 } from '../utils.ts';
 
 const FIELD_MODULUS = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
 
