@@ -215,8 +215,8 @@ async function generateProof(
 
     const noirInputs = {
         signed_attrs_hash: Array.from(signed_attrs_hash),
-        modulus_limbs: prep.modulus_limbs.map(l => '0x' + BigInt(l).toString(16)),
-        redc_limbs: prep.redc_limbs.map(l => '0x' + BigInt(l).toString(16)),
+        modulus_limbs: prep.modulus_limbs,
+        redc_limbs: prep.redc_limbs,
         signature_bytes: Array.from(prep.signature),
         exponent: prep.exponent,
         signer_fpr: prep.signer_fpr,
@@ -226,11 +226,13 @@ async function generateProof(
     };
 
     console.log('\nDEBUG: Circuit inputs:');
+    console.log('  signed_attrs_hash:', Buffer.from(noirInputs.signed_attrs_hash).toString('hex'));
     console.log('  modulus_limbs[0]:', noirInputs.modulus_limbs[0]);
     console.log('  modulus_limbs[17]:', noirInputs.modulus_limbs[17]);
     console.log('  redc_limbs[0]:', noirInputs.redc_limbs[0]);
     console.log('  redc_limbs[17]:', noirInputs.redc_limbs[17]);
     console.log('  signature_bytes length:', noirInputs.signature_bytes.length);
+    console.log('  signature (first 32 bytes):', Buffer.from(noirInputs.signature_bytes.slice(0, 32)).toString('hex'));
     console.log('  exponent:', noirInputs.exponent);
     console.log('  index:', noirInputs.index);
     console.log('  merkle_path length:', noirInputs.merkle_path.length);

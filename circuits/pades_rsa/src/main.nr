@@ -1,10 +1,10 @@
 use dep::noir_rsa::rsa::verify_sha256_pkcs1v15;
-use dep::noir_rsa::types::{RBN2048, Params2048};
 use dep::bignum::params::BigNumParams;
+use dep::bignum::RuntimeBigNum;
 
 // RSA-2048 signature verification circuit for PAdES documents
 // Supports PKCS#1 v1.5 padding with SHA-256
-// Based on zkpassport/noir_rsa v0.9.1
+// Based on zkpassport/noir_rsa v0.9.2
 
 fn main(
     // Document binding (public)
@@ -20,11 +20,14 @@ fn main(
     merkle_path: [Field; 8],          // Merkle inclusion path for local allow-list
     index: Field,                     // Leaf index in local tree
 ) {
-    let params: Params2048 = BigNumParams::new(false, modulus_limbs, redc_limbs);
-    let signature: RBN2048 = RBN2048::from_be_bytes(params, signature_bytes);
+    // Create BigNumParams for RSA-2048
+    let params = BigNumParams::<18, 2048>::new(false, modulus_limbs, redc_limbs);
     
-    // Test RSA verification
-    let valid = verify_sha256_pkcs1v15(signed_attrs_hash, signature, exponent);
+    // Convert signature bytes to RuntimeBigNum
+    let signature = RuntimeBigNum::<18, 2048>::from_be_bytes(params, signature_bytes);
+    
+    // Verify RSA signature with explicit type parameters
+    let valid = verify_sha256_pkcs1v15::<18, 2048>(signed_attrs_hash, signature, exponent);
     assert(valid, "RSA signature verification failed");
 
     // Merkle tree verification
