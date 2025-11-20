@@ -1,0 +1,8 @@
+[package]
+name = "pades_ecdsa_poseidon"
+type = "bin"
+authors = [""]
+compiler_version = ">=0.18.0"
+
+[dependencies]
+poseidon = { git = "https://github.com/noir-lang/poseidon/", tag = "v0.1.1" }

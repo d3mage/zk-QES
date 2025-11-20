@@ -1,31 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { Barretenberg } from '@aztec/bb.js';
+import { bigintToUint8Array, uint8ArrayToBigint, hexToField, fieldToHex, fieldToDecimal } from './utils.ts';
 
 interface Allowlist {
     cert_fingerprints: string[];
-}
-
-// BN254 field modulus (same as in Noir circuit)
-const FIELD_MODULUS = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
-
-// Convert hex string to Field (bigint)
-// Applies modulo to handle SHA-256 hashes that exceed BN254 field modulus
-function hexToField(hex: string): bigint {
-    const cleanHex = hex.startsWith('0x') ? hex.slice(2) : hex;
-    const value = BigInt('0x' + cleanHex);
-    // Apply modulo to ensure value fits in field
-    return value % FIELD_MODULUS;
-}
-
-// Convert Field to hex string (32 bytes, big-endian)
-function fieldToHex(field: bigint): string {
-    return field.toString(16).padStart(64, '0');
-}
-
-// Convert Field to decimal string (for Noir inputs)
-function fieldToDecimal(field: bigint): string {
-    return field.toString(10);
 }
 
 async function pedersenMerkleHash(bbApi: Barretenberg, left: bigint, right: bigint): Promise<bigint> {
@@ -38,28 +17,18 @@ async function pedersenMerkleHash(bbApi: Barretenberg, left: bigint, right: bigi
     return uint8ArrayToBigint(hashFr);
 }
 
-// Bigint to 32-byte Uint8Array (big-endian)
-function bigintToUint8Array(value: bigint): Uint8Array {
-    const bytes = new Uint8Array(32);
-    let num = value;
-    for (let i = 31; i >= 0; i--) {
-        bytes[i] = Number(num & 0xFFn);
-        num = num >> 8n;
-    }
-    return bytes;
-}
+async function poseidonMerkleHash(bbApi: Barretenberg, left: bigint, right: bigint): Promise<bigint> {
+    const leftFr = bigintToUint8Array(left);
+    const rightFr = bigintToUint8Array(right);
 
-// 32-byte Uint8Array to bigint (big-endian)
-function uint8ArrayToBigint(bytes: Uint8Array): bigint {
-    let result = 0n;
-    for (let i = 0; i < bytes.length; i++) {
-        result = (result << 8n) | BigInt(bytes[i]);
-    }
-    return result;
+    const result = await bbApi.poseidon2Hash({ inputs: [leftFr, rightFr] });
+    const hashFr = result.hash;
+
+    return uint8ArrayToBigint(hashFr);
 }
 
 // Build Merkle tree from leaves
-async function buildMerkleTree(bbApi: Barretenberg, leaves: bigint[]): Promise<{
+async function buildMerkleTree(bbApi: Barretenberg, leaves: bigint[], mode: string, depth = 8): Promise<{
     root: bigint;
     layers: bigint[][];
 }> {
@@ -67,10 +36,18 @@ async function buildMerkleTree(bbApi: Barretenberg, leaves: bigint[]): Promise<{
         throw new Error('Cannot build tree from empty leaves');
     }
 
-    // Pad to exactly 256 leaves (depth 8) to match circuit
-    const CIRCUIT_DEPTH = 8;
-    const paddedSize = Math.pow(2, CIRCUIT_DEPTH);
+    // Select hash function based on mode
+    let hashFn: (bbApi: Barretenberg, left: bigint, right: bigint) => Promise<bigint>;
+    
+    if (mode === 'pedersen') {
+        hashFn = pedersenMerkleHash;
+    } else if (mode === 'poseidon') {
+        hashFn = poseidonMerkleHash;
+    } else {
+        throw new Error(`Invalid mode: ${mode}`);
+    }
 
+    const paddedSize = Math.pow(2, depth);
     const paddedLeaves = [...leaves];
     while (paddedLeaves.length < paddedSize) {
         paddedLeaves.push(0n);
@@ -86,7 +63,7 @@ async function buildMerkleTree(bbApi: Barretenberg, leaves: bigint[]): Promise<{
         for (let i = 0; i < currentLayer.length; i += 2) {
             const left = currentLayer[i];
             const right = currentLayer[i + 1];
-            const parent = await pedersenMerkleHash(bbApi, left, right);
+            const parent = await hashFn(bbApi, left, right);
             nextLayer.push(parent);
         }
 
@@ -119,7 +96,7 @@ function getMerkleProof(layers: bigint[][], index: number): bigint[] {
     return proof;
 }
 
-export async function createMerkleTreeFromAllowlist(allowlist: Allowlist, outDir: string, isDump: boolean = false): Promise<{
+export async function createMerkleTreeFromAllowlist(allowlist: Allowlist, outDir: string, mode: string = 'pedersen', isDump: boolean = false): Promise<{
     root: string;
     proofs: Array<{
         fingerprint: string;
@@ -130,12 +107,12 @@ export async function createMerkleTreeFromAllowlist(allowlist: Allowlist, outDir
         root_decimal: string;
     }>;
 }> {
-    console.log('Initializing Barretenberg...');
     const bbApi = await Barretenberg.initSingleton({
         threads: 4
     });
 
-    console.log('Building Pedersen Merkle tree from allowlist...');
+    const modeLabel = mode.charAt(0).toUpperCase() + mode.slice(1);
+    console.log(`Building ${modeLabel} Merkle tree from allowlist...`);
 
     if (!allowlist.cert_fingerprints || allowlist.cert_fingerprints.length === 0) {
         throw new Error('Allowlist must contain at least one certificate fingerprint');
@@ -145,8 +122,8 @@ export async function createMerkleTreeFromAllowlist(allowlist: Allowlist, outDir
 
     const leaves = allowlist.cert_fingerprints.map(hexToField);
 
-    console.log('\nBuilding Merkle tree with Pedersen hash (Barretenberg native/async)...');
-    const { root, layers } = await buildMerkleTree(bbApi, leaves);
+    console.log(`\nBuilding Merkle tree with ${modeLabel} hash (Barretenberg native/async)...`);
+    const { root, layers } = await buildMerkleTree(bbApi, leaves, mode);
 
     const depth = layers.length - 1;
     console.log(`\nTree built successfully:`);
@@ -179,12 +156,12 @@ export async function createMerkleTreeFromAllowlist(allowlist: Allowlist, outDir
     console.log(`✓ ${allowlist.cert_fingerprints.length} inclusion proofs generated`);
 
     if (isDump) {
-        const pathsDir = path.join(outDir, 'tree-poseidon');
+        const pathsDir = path.join(outDir, `tree-${mode}`);
         if (!fs.existsSync(pathsDir)) {
             fs.mkdirSync(pathsDir, { recursive: true });
         }
 
-        fs.writeFileSync(path.join(outDir, 'tl_root_poseidon.txt'), rootDecimal);
+        fs.writeFileSync(path.join(outDir, `tl_root_${mode}.txt`), rootDecimal);
 
         for (const proofData of proofs) {
             const filename = `${proofData.fingerprint}.json`;
@@ -192,8 +169,8 @@ export async function createMerkleTreeFromAllowlist(allowlist: Allowlist, outDir
         }
 
         console.log(`\nOutputs saved to ${outDir}/:`);
-        console.log(`  - tl_root_poseidon.txt`);
-        console.log(`  - tree-poseidon/*.json`);
+        console.log(`  - tl_root_${mode}.txt`);
+        console.log(`  - tree-${mode}/*.json`);
     }
 
     console.log('\n✅ Done!');

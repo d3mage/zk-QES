@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import * as asn1js from 'asn1js';
 import * as pkijs from 'pkijs';
-import { sha256 } from '../utils.ts';
+import { sha256 } from '../common/utils.ts';
 
 interface RsaSignatureData {
     signature: Buffer;    // raw RSA signature bytes (big-endian integer)

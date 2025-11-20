@@ -2,13 +2,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Noir } from '@noir-lang/noir_js';
 import { UltraHonkBackend as BarretenbergBackend } from '@aztec/bb.js';
-import { getByteRangeHash } from '../ECDSA-Pades/byte-range.ts';
+import { getByteRangeHash } from '../common/byte-range.ts';
 import { extractRsaSignatureFromPDF } from './signature.ts';
-import { createMerkleTreeFromAllowlist } from '../ECDSA-Pades/tree.ts';
-import { sha256 } from '../utils.ts';
-
-const FIELD_MODULUS =
-    21888242871839275222246405745257275088548364400416034343698204186575808495617n;
+import { createMerkleTreeFromAllowlist } from '../common/tree.ts';
+import { sha256 } from '../common/utils.ts';
+import { FIELD_MODULUS } from '../common/constants.ts';
 
 function modulusToLimbs(modulusBytes: Uint8Array): string[] {
     let modulus = 0n;
@@ -20,12 +18,12 @@ function modulusToLimbs(modulusBytes: Uint8Array): string[] {
     // noir-bignum uses 120-bit limbs (15 bytes each)
     const LIMB_BITS = 120n;
     const limbMask = (1n << LIMB_BITS) - 1n;
-    
+
     for (let i = 0; i < 18; i++) {
         limbs.push((modulus & limbMask).toString());
         modulus = modulus >> LIMB_BITS;
     }
-    
+
     return limbs;
 }
 
@@ -39,16 +37,16 @@ function calculateRedcParam(modulusBytes: Uint8Array): string[] {
     const LIMB_BITS = 120n;
     const R = 1n << (LIMB_BITS * 18n);
     const R_squared = (R * R) % N;
-    
+
     const limbs: string[] = [];
     const limbMask = (1n << LIMB_BITS) - 1n;
     let value = R_squared;
-    
+
     for (let i = 0; i < 18; i++) {
         limbs.push((value & limbMask).toString());
         value = value >> LIMB_BITS;
     }
-    
+
     return limbs;
 }
 
@@ -78,6 +76,7 @@ interface ProofResult {
 async function preparePDF(
     pdfPath: string,
     allowlistPath: string,
+    mode: string,
     isDump: boolean = false,
     outDir: string = 'out'
 ): Promise<PreparationResult> {
@@ -86,6 +85,11 @@ async function preparePDF(
     if (!fs.existsSync(pdfPath)) {
         throw new Error(`File not found: ${pdfPath}`);
     }
+
+    if (!fs.existsSync(allowlistPath)) {
+        throw new Error(`File not found: ${allowlistPath}`);
+    }
+
     const pdfBuffer = fs.readFileSync(pdfPath);
 
     if (isDump && !fs.existsSync(outDir)) {
@@ -109,12 +113,10 @@ async function preparePDF(
     console.log(`  Fingerprint (decimal): ${signer_fpr}`);
 
     console.log('\n[4/5] Building Merkle tree from allowlist...');
-    if (!fs.existsSync(allowlistPath)) {
-        throw new Error(`File not found: ${allowlistPath}`);
-    }
+
 
     const allowlist = JSON.parse(fs.readFileSync(allowlistPath, 'utf-8'));
-    const { root, proofs } = await createMerkleTreeFromAllowlist(allowlist, outDir, isDump);
+    const { root, proofs } = await createMerkleTreeFromAllowlist(allowlist, outDir, mode, isDump);
 
     console.log('\n[5/5] Loading Merkle proof for signer...');
     const signerProof = proofs.find((p: any) => p.fingerprint === signer_fpr_hex);
@@ -142,7 +144,7 @@ async function preparePDF(
 
     console.log(`\n[DEBUG] RSA key size: ${pub_key_n.length} bytes (${pub_key_n.length * 8} bits)`);
     console.log(`  modulus (first 32 bytes): ${Buffer.from(pub_key_n.slice(0, 32)).toString('hex')}`);
-    
+
     const modulus_limbs = modulusToLimbs(pub_key_n);
     const redc_limbs = calculateRedcParam(pub_key_n);
 
@@ -385,11 +387,12 @@ async function verifyProof(
 async function main() {
     const pdfPath = '../../examples/RSA/RSA.pdf';
     const allowlistPath = 'allowlist.json';
+    const mode = 'pedersen';
     const circuitPath = '../../circuits/pades_rsa';
     const isDump = false;
     const outDir = 'out';
 
-    const prep = await preparePDF(pdfPath, allowlistPath, isDump, outDir);
+    const prep = await preparePDF(pdfPath, allowlistPath, mode, isDump, outDir);
     const proofResult = await generateProof(prep, circuitPath, isDump, outDir);
     const isValid = await verifyProof(proofResult, circuitPath, prep.tl_root);
 

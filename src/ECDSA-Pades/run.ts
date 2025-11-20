@@ -2,12 +2,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Noir } from '@noir-lang/noir_js';
 import { UltraHonkBackend as BarretenbergBackend } from '@aztec/bb.js';
-import { getByteRangeHash } from "./byte-range.ts";
+import { getByteRangeHash } from "../common/byte-range.ts";
 import { extractSignatureFromPDF } from './signature.ts';
-import { createMerkleTreeFromAllowlist } from './tree.ts';
-import { sha256 } from '../utils.ts';
-
-const FIELD_MODULUS = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
+import { createMerkleTreeFromAllowlist } from '../common/tree.ts';
+import { sha256 } from '../common/utils.ts';
+import { FIELD_MODULUS } from '../common/constants.ts';
 
 interface PreparationResult {
     doc_hash: Uint8Array;
@@ -30,7 +29,7 @@ interface ProofResult {
     manifest: any;
 }
 
-async function preparePDF(pdfPath: string, allowlistPath: string, isDump: boolean = false, outDir: string = 'out'): Promise<PreparationResult> {
+async function preparePDF(pdfPath: string, allowlistPath: string, mode: string, isDump: boolean = false, outDir: string = 'out'): Promise<PreparationResult> {
     console.log('=== PDF Preparation Phase ===\n');
 
     if (!fs.existsSync(pdfPath)) {
@@ -64,7 +63,7 @@ async function preparePDF(pdfPath: string, allowlistPath: string, isDump: boolea
     }
 
     const allowlist = JSON.parse(fs.readFileSync(allowlistPath, 'utf-8'));
-    const { root, proofs } = await createMerkleTreeFromAllowlist(allowlist, outDir, isDump);
+    const { root, proofs } = await createMerkleTreeFromAllowlist(allowlist, outDir, mode, isDump);
 
     console.log(`\n[5/5] Loading Merkle proof for signer...`);
     const signerProof = proofs.find(p => p.fingerprint === signer_fpr_hex);
@@ -292,11 +291,12 @@ async function verifyProof(proofResult: ProofResult, circuitPath: string, expect
 async function main() {
     const pdfPath = '../../examples/ECDSA/ECDSA.pdf';
     const allowlistPath = 'allowlist.json';
-    const circuitPath = '../../circuits/pades_ecdsa_pedersen';
+    const mode = 'pedersen';
+    const circuitPath = `../../circuits/pades_ecdsa_${mode}`;
     const isDump = false;
     const outDir = 'out';
 
-    const prep = await preparePDF(pdfPath, allowlistPath, isDump, outDir);
+    const prep = await preparePDF(pdfPath, allowlistPath, mode, isDump, outDir);
     const proofResult = await generateProof(prep, circuitPath, isDump, outDir);
     const isValid = await verifyProof(proofResult, circuitPath, prep.tl_root);
 

@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { sha256 } from '../utils.ts';
+import { sha256 } from './utils.ts';
 
 function parseByteRange(pdfBuffer: Buffer): number[] | null {
     const pdfStr = pdfBuffer.toString('latin1');
