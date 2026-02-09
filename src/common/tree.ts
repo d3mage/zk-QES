@@ -96,7 +96,13 @@ function getMerkleProof(layers: bigint[][], index: number): bigint[] {
     return proof;
 }
 
-export async function createMerkleTreeFromAllowlist(allowlist: Allowlist, outDir: string, mode: string = 'pedersen', isDump: boolean = false): Promise<{
+export async function createMerkleTreeFromAllowlist(
+    allowlist: Allowlist,
+    outDir: string,
+    mode: string = 'pedersen',
+    isDump: boolean = false,
+    bbApi?: Barretenberg
+): Promise<{
     root: string;
     proofs: Array<{
         fingerprint: string;
@@ -107,7 +113,8 @@ export async function createMerkleTreeFromAllowlist(allowlist: Allowlist, outDir
         root_decimal: string;
     }>;
 }> {
-    const bbApi = await Barretenberg.initSingleton({
+    const ownsBbApi = !bbApi;
+    const bb = bbApi ?? await Barretenberg.initSingleton({
         threads: 4
     });
 
@@ -123,7 +130,7 @@ export async function createMerkleTreeFromAllowlist(allowlist: Allowlist, outDir
     const leaves = allowlist.cert_fingerprints.map(hexToField);
 
     console.log(`\nBuilding Merkle tree with ${modeLabel} hash (Barretenberg native/async)...`);
-    const { root, layers } = await buildMerkleTree(bbApi, leaves, mode);
+    const { root, layers } = await buildMerkleTree(bb, leaves, mode);
 
     const depth = layers.length - 1;
     console.log(`\nTree built successfully:`);
@@ -174,8 +181,11 @@ export async function createMerkleTreeFromAllowlist(allowlist: Allowlist, outDir
     }
 
     console.log('\n✅ Done!');
-
-    await Barretenberg.destroySingleton();
+    if (ownsBbApi) {
+        console.log('Destroying Barretenberg singleton...');
+        await Barretenberg.destroySingleton();
+        console.log('Barretenberg singleton destroyed.');
+    }
 
     return {
         root: rootDecimal,

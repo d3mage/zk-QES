@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { Noir } from '@noir-lang/noir_js';
-import { UltraHonkBackend as BarretenbergBackend } from '@aztec/bb.js';
+import { Barretenberg, UltraHonkBackend as BarretenbergBackend } from '@aztec/bb.js';
 import { getByteRangeHash } from '../common/byte-range.ts';
 import { extractRsaSignatureFromPDF } from './signature.ts';
 import { createMerkleTreeFromAllowlist } from '../common/tree.ts';
@@ -78,7 +78,8 @@ async function preparePDF(
     allowlistPath: string,
     mode: string,
     isDump: boolean = false,
-    outDir: string = 'out'
+    outDir: string = 'out',
+    bbApi?: Barretenberg
 ): Promise<PreparationResult> {
     console.log('=== PDF Preparation Phase ===\n');
 
@@ -116,7 +117,7 @@ async function preparePDF(
 
 
     const allowlist = JSON.parse(fs.readFileSync(allowlistPath, 'utf-8'));
-    const { root, proofs } = await createMerkleTreeFromAllowlist(allowlist, outDir, mode, isDump);
+    const { root, proofs } = await createMerkleTreeFromAllowlist(allowlist, outDir, mode, isDump, bbApi);
 
     console.log('\n[5/5] Loading Merkle proof for signer...');
     const signerProof = proofs.find((p: any) => p.fingerprint === signer_fpr_hex);
@@ -168,9 +169,36 @@ async function preparePDF(
     };
 }
 
+async function loadCircuit(circuitPath: string): Promise<any> {
+    console.log('\nCompiling circuit...');
+    const circuitDir = circuitPath;
+    const circuitName = path.basename(circuitPath);
+    const compiledPath = path.join(circuitDir, 'target', `${circuitName}.json`);
+
+    if (!fs.existsSync(compiledPath)) {
+        console.log('Circuit not compiled. Compiling now...');
+        const { execSync } = await import('node:child_process');
+        const nargoHome = path.join(circuitDir, '.nargo');
+        if (!fs.existsSync(nargoHome)) {
+            fs.mkdirSync(nargoHome, { recursive: true });
+        }
+        execSync('nargo compile', {
+            cwd: circuitDir,
+            stdio: 'inherit',
+            env: {
+                ...process.env,
+                NARGO_HOME: nargoHome
+            }
+        });
+    }
+
+    return JSON.parse(fs.readFileSync(compiledPath, 'utf-8'));
+}
+
 async function generateProof(
     prep: PreparationResult,
-    circuitPath: string,
+    noir: Noir,
+    backend: BarretenbergBackend,
     isDump: boolean = false,
     outDir: string = 'out'
 ): Promise<ProofResult> {
@@ -181,34 +209,6 @@ async function generateProof(
     console.log('Loading inputs...');
     console.log(`  exponent:  ${prep.exponent}`);
     console.log(`  tl_root:   ${prep.tl_root}`);
-
-    console.log('\nCompiling circuit...');
-    const circuitDir = circuitPath;
-    const circuitName = path.basename(circuitPath);
-    const compiledPath = path.join(circuitDir, 'target', `${circuitName}.json`);
-
-    if (!fs.existsSync(compiledPath)) {
-        console.log('Circuit not compiled. Compiling now...');
-        const { execSync } = await import('node:child_process');
-        execSync('nargo compile', {
-            cwd: circuitDir,
-            stdio: 'inherit'
-        });
-    }
-
-    const circuit = JSON.parse(fs.readFileSync(compiledPath, 'utf-8'));
-
-    console.log('Initializing Noir...');
-    const noir = new Noir(circuit);
-
-    console.log('Initializing Barretenberg backend with increased memory...');
-    const backend = new BarretenbergBackend(circuit.bytecode, {
-        threads: 4,
-        memory: {
-            initial: 256,
-            maximum: 65536
-        }
-    });
 
     const merkle_path = [...prep.merkle_path];
     while (merkle_path.length < 8) {
@@ -299,8 +299,6 @@ async function generateProof(
 
     console.log('\n✓ Proof generation complete!');
 
-    await backend.destroy();
-
     return {
         proof: proof.proof,
         publicInputs: proof.publicInputs,
@@ -311,7 +309,7 @@ async function generateProof(
 
 async function verifyProof(
     proofResult: ProofResult,
-    circuitPath: string,
+    backend: BarretenbergBackend,
     expectedTlRoot?: string
 ): Promise<boolean> {
     console.log('\n=== Verification Phase ===\n');
@@ -341,17 +339,6 @@ async function verifyProof(
 
     console.log('\n[3/3] Verifying zero-knowledge proof...');
 
-    const circuitDir = circuitPath;
-    const circuitName = path.basename(circuitPath);
-    const compiledPath = path.join(circuitDir, 'target', `${circuitName}.json`);
-
-    if (!fs.existsSync(compiledPath)) {
-        throw new Error('Circuit not compiled. Run proof generation first.');
-    }
-
-    const circuit = JSON.parse(fs.readFileSync(compiledPath, 'utf-8'));
-    const backend = new BarretenbergBackend(circuit.bytecode);
-
     try {
         const isValid = await backend.verifyProof({
             proof: proofResult.proof,
@@ -364,27 +351,64 @@ async function verifyProof(
             console.log('✅ ALL VERIFICATIONS PASSED!');
             console.log('═══════════════════════════════════════════════════\n');
 
-            await backend.destroy();
             return true;
         } else {
             console.log('\n❌ PROOF VERIFICATION FAILED');
             console.log('The proof is invalid or was generated incorrectly.');
 
-            await backend.destroy();
             return false;
         }
     } catch (error) {
         console.error('\n❌ VERIFICATION ERROR:', error);
 
         try {
-            await backend.destroy();
+            // no-op
         } catch {
         }
         return false;
     }
 }
 
-async function main() {
+async function destroyWithTimeout(label: string, fn: () => Promise<void>, timeoutMs: number): Promise<boolean> {
+    let timedOut = false;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+    const timeoutPromise = new Promise<void>((resolve) => {
+        timeoutId = setTimeout(() => {
+            timedOut = true;
+            resolve();
+        }, timeoutMs);
+    });
+
+    try {
+        await Promise.race([fn(), timeoutPromise]);
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn(`WARN: ${label} destroy failed: ${message}`);
+    } finally {
+        if (timeoutId) {
+            clearTimeout(timeoutId);
+        }
+    }
+
+    if (timedOut) {
+        console.warn(`WARN: ${label} destroy timed out after ${timeoutMs}ms; continuing.`);
+    }
+
+    return timedOut;
+}
+
+async function cleanup(backend?: BarretenbergBackend, bbApi?: Barretenberg): Promise<void> {
+    const timeoutMs = 5000;
+    if (backend) {
+        await destroyWithTimeout('Barretenberg backend', () => backend.destroy(), timeoutMs);
+    }
+    if (bbApi) {
+        await destroyWithTimeout('Barretenberg singleton', () => Barretenberg.destroySingleton(), timeoutMs);
+    }
+}
+
+async function main(): Promise<number> {
     const pdfPath = '../../examples/RSA/RSA.pdf';
     const allowlistPath = 'allowlist.json';
     const mode = 'pedersen';
@@ -392,16 +416,39 @@ async function main() {
     const isDump = false;
     const outDir = 'out';
 
-    const prep = await preparePDF(pdfPath, allowlistPath, mode, isDump, outDir);
-    const proofResult = await generateProof(prep, circuitPath, isDump, outDir);
-    const isValid = await verifyProof(proofResult, circuitPath, prep.tl_root);
+    let backend: BarretenbergBackend | undefined;
+    let bbApi: Barretenberg | undefined;
 
-    if (!isValid) {
-        process.exit(1);
+    try {
+        const circuit = await loadCircuit(circuitPath);
+
+        console.log('Initializing Noir...');
+        const noir = new Noir(circuit);
+
+        console.log('Initializing Barretenberg backend with increased memory...');
+        backend = new BarretenbergBackend(circuit.bytecode, {
+            threads: 4,
+            memory: {
+                initial: 256,
+                maximum: 65536
+            }
+        });
+
+        bbApi = await Barretenberg.initSingleton({ threads: 4 });
+
+        const prep = await preparePDF(pdfPath, allowlistPath, mode, isDump, outDir, bbApi);
+        const proofResult = await generateProof(prep, noir, backend, isDump, outDir);
+        const isValid = await verifyProof(proofResult, backend, prep.tl_root);
+
+        return isValid ? 0 : 1;
+    } finally {
+        await cleanup(backend, bbApi);
     }
 }
 
-main().catch(err => {
+main().then((code) => {
+    process.exit(code);
+}).catch(err => {
     console.error('\n❌ ERROR:', err.message);
     if (err.stack) {
         console.error(err.stack);
