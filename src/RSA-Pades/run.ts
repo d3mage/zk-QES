@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Noir } from '@noir-lang/noir_js';
 import { Barretenberg, UltraHonkBackend as BarretenbergBackend } from '@aztec/bb.js';
 import { getByteRangeHash } from '../common/byte-range.ts';
@@ -7,6 +8,10 @@ import { extractRsaSignatureFromPDF } from './signature.ts';
 import { createMerkleTreeFromAllowlist } from '../common/tree.ts';
 import { sha256 } from '../common/utils.ts';
 import { FIELD_MODULUS } from '../common/constants.ts';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const repoRoot = path.resolve(__dirname, '..', '..');
 
 function modulusToLimbs(modulusBytes: Uint8Array): string[] {
     let modulus = 0n;
@@ -33,14 +38,18 @@ function calculateRedcParam(modulusBytes: Uint8Array): string[] {
         N = (N << 8n) | BigInt(modulusBytes[i]);
     }
 
-    // noir-bignum uses 120-bit limbs (15 bytes each)
+    // noir-bignum uses Barrett reduction with:
+    // redc_param = 2^(2*MOD_BITS + 4) / modulus
+    // (see BARRETT_REDUCTION_OVERFLOW_BITS = 4)
     const LIMB_BITS = 120n;
-    const R = 1n << (LIMB_BITS * 18n);
-    const R_squared = (R * R) % N;
+    const MOD_BITS = 2048n;
+    const BARRETT_OVERFLOW_BITS = 4n;
+    const numerator = 1n << (2n * MOD_BITS + BARRETT_OVERFLOW_BITS);
+    const redc = numerator / N;
 
     const limbs: string[] = [];
     const limbMask = (1n << LIMB_BITS) - 1n;
-    let value = R_squared;
+    let value = redc;
 
     for (let i = 0; i < 18; i++) {
         limbs.push((value & limbMask).toString());
@@ -145,6 +154,16 @@ async function preparePDF(
 
     console.log(`\n[DEBUG] RSA key size: ${pub_key_n.length} bytes (${pub_key_n.length * 8} bits)`);
     console.log(`  modulus (first 32 bytes): ${Buffer.from(pub_key_n.slice(0, 32)).toString('hex')}`);
+
+    if (pub_key_n.length !== 256) {
+        throw new Error(`Circuit expects 2048-bit modulus (256 bytes). Got ${pub_key_n.length} bytes.`);
+    }
+    if (signatureBytes.length !== 256) {
+        throw new Error(`Circuit expects 256-byte RSA signature. Got ${signatureBytes.length} bytes.`);
+    }
+    if (extractedData.publicKey.e <= 0 || extractedData.publicKey.e >= 131072) {
+        throw new Error(`RSA exponent must be in (0, 2^17). Got ${extractedData.publicKey.e}.`);
+    }
 
     const modulus_limbs = modulusToLimbs(pub_key_n);
     const redc_limbs = calculateRedcParam(pub_key_n);
@@ -409,12 +428,12 @@ async function cleanup(backend?: BarretenbergBackend, bbApi?: Barretenberg): Pro
 }
 
 async function main(): Promise<number> {
-    const pdfPath = '../../examples/RSA/RSA.pdf';
-    const allowlistPath = 'allowlist.json';
+    const pdfPath = path.join(repoRoot, 'examples', 'RSA', 'RSA.pdf');
+    const allowlistPath = path.join(__dirname, 'allowlist.json');
     const mode = 'pedersen';
-    const circuitPath = '../../circuits/pades_rsa';
+    const circuitPath = path.join(repoRoot, 'circuits', 'pades_rsa');
     const isDump = false;
-    const outDir = 'out';
+    const outDir = path.join(__dirname, 'out');
 
     let backend: BarretenbergBackend | undefined;
     let bbApi: Barretenberg | undefined;
