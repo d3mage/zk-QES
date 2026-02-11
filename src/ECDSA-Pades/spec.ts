@@ -6,8 +6,10 @@ import { extractSignatureFromPDF } from './signature.ts';
 import type { RunSpec, ProofResult } from '../common/runner.ts';
 import {
     type CommonPreparationResult,
+    MAX_SIGNED_ATTRS_LEN,
     padMerklePath,
     prepareCommon,
+    padBytes,
     verifyProofCommon,
     writeProofArtifacts
 } from '../common/pades.ts';
@@ -25,6 +27,7 @@ type PreparationResult = CommonPreparationResult & {
 
 type EcdsaManifest = {
     version: number;
+    doc_hash: string;
     signed_attrs_hash: string;
     signer: {
         pub_x: string;
@@ -73,7 +76,9 @@ async function preparePDF(
 
             return {
                 signedAttrsHash: extractedData.signedAttrsHash,
+                signedAttrsDer: extractedData.signedAttrsDer,
                 certificate: extractedData.certificate,
+                publicKeyFingerprintBytes: extractedData.publicKeyFingerprintBytes,
                 pub_key_x: extractedData.publicKey.x,
                 pub_key_y: extractedData.publicKey.y,
                 signature: new Uint8Array(signature),
@@ -92,9 +97,13 @@ async function generateProof(
     console.log('\n=== Proof Generation Phase ===\n');
 
     const signed_attrs_hash = prep.signed_attrs_hash;
+    const signed_attrs_der = padBytes(prep.signed_attrs_der, MAX_SIGNED_ATTRS_LEN);
+    const signed_attrs_len = prep.signed_attrs_der.length;
 
     console.log('Inputs:');
     console.log(`  signed_attrs_hash: ${Buffer.from(signed_attrs_hash).toString('hex')}`);
+    console.log(`  doc_hash: ${Buffer.from(prep.doc_hash).toString('hex')}`);
+    console.log(`  signed_attrs_len: ${signed_attrs_len}`);
     console.log(`  pub_key_x: ${Buffer.from(prep.pub_key_x).toString('hex')}`);
     console.log(`  pub_key_y: ${Buffer.from(prep.pub_key_y).toString('hex')}`);
     console.log(`  signer_fpr: ${prep.signer_fpr} (Field)`);
@@ -105,7 +114,10 @@ async function generateProof(
     const merkle_path = padMerklePath(prep.merkle_path, 8);
 
     const noirInputs = {
+        doc_hash: Array.from(prep.doc_hash),
         signed_attrs_hash: Array.from(signed_attrs_hash),
+        signed_attrs: Array.from(signed_attrs_der),
+        signed_attrs_len,
         pub_key_x: Array.from(prep.pub_key_x),
         pub_key_y: Array.from(prep.pub_key_y),
         signer_fpr: prep.signer_fpr,
@@ -127,6 +139,7 @@ async function generateProof(
 
     const manifest: EcdsaManifest = {
         version: 1,
+        doc_hash: Buffer.from(prep.doc_hash).toString('hex'),
         signed_attrs_hash: Buffer.from(signed_attrs_hash).toString('hex'),
         signer: {
             pub_x: Buffer.from(prep.pub_key_x).toString('hex'),
@@ -167,6 +180,7 @@ async function verifyProof(
     return verifyProofCommon(proofResult, backend, expectedTlRoot, (manifest) => {
         console.log(`  Version: ${manifest.version}`);
         console.log(`  Timestamp: ${manifest.timestamp}`);
+        console.log(`  Doc hash: ${manifest.doc_hash}`);
         console.log(`  Signed attrs hash: ${manifest.signed_attrs_hash}`);
         console.log(`  Signer fingerprint: ${manifest.signer.fingerprint}`);
     });

@@ -1,6 +1,9 @@
 use dep::noir_rsa::rsa::verify_sha256_pkcs1v15;
 use dep::bignum::params::BigNumParams;
 use dep::bignum::RuntimeBigNum;
+use dep::pades_common::{sha256_signed_attrs, sha256_var, bytes32_to_field, assert_bytes_eq, compute_merkle_root_pedersen};
+use dep::pades_common::der::extract_message_digest;
+use dep::pades_common::MAX_SIGNED_ATTRS_LEN;
 
 // RSA-2048 signature verification circuit for PAdES documents
 // Supports PKCS#1 v1.5 padding with SHA-256
@@ -8,10 +11,13 @@ use dep::bignum::RuntimeBigNum;
 
 fn main(
     // Public inputs
+    doc_hash: pub [u8; 32],          // SHA-256 digest of PDF ByteRange
     signed_attrs_hash: pub [u8; 32],   // SHA-256 digest of CMS SignedAttributes
     tl_root: pub Field,                // Merkle root of local allow-list
 
     // Private inputs
+    signed_attrs: [u8; MAX_SIGNED_ATTRS_LEN], // DER-encoded SignedAttributes (padded)
+    signed_attrs_len: u32,            // Actual SignedAttributes length
     modulus_limbs: [u128; 18],
     redc_limbs: [u128; 18],
     signature_bytes: [u8; 256],
@@ -20,6 +26,19 @@ fn main(
     merkle_path: [Field; 8],           // Merkle inclusion path for local allow-list
     index: Field,                      // Leaf index in local tree
 ) {
+    // 0. Bind SignedAttributes to doc_hash
+    let computed_signed_attrs_hash = sha256_signed_attrs(signed_attrs, signed_attrs_len);
+    assert_bytes_eq(computed_signed_attrs_hash, signed_attrs_hash);
+
+    let message_digest = extract_message_digest(signed_attrs, signed_attrs_len);
+    assert_bytes_eq(message_digest, doc_hash);
+
+    // 0.1 Bind allow-list leaf to the signing key
+    let rsa_key_bytes = serialize_rsa_key(modulus_limbs, exponent);
+    let pubkey_hash = sha256_var(rsa_key_bytes, 292);
+    let computed_fpr = bytes32_to_field(pubkey_hash);
+    assert(computed_fpr == signer_fpr, "signer_fpr does not match public key");
+
     // Create BigNumParams for RSA-2048
     let params = BigNumParams::<18, 2048>::new(false, modulus_limbs, redc_limbs);
     
@@ -31,40 +50,35 @@ fn main(
     assert(valid, "RSA signature verification failed");
 
     // Merkle tree verification
-    let computed_root = compute_merkle_root_pedersen(signer_fpr, index, merkle_path);
+    let computed_root = compute_merkle_root_pedersen(computed_fpr, index, merkle_path);
     assert(computed_root == tl_root, "Signer not in local allow-list");
 }
 
-// Compute Merkle root using Pedersen
-// Parameters:
-// - leaf: Signer fingerprint as Field (SHA-256 cert hash converted to Field)
-// - index: Position in the tree (0-255 for depth 8)
-// - path: Array of sibling hashes from leaf to root
-//
-// Returns: Merkle root as Field
-fn compute_merkle_root_pedersen(
-    leaf: Field,
-    index: Field,
-    path: [Field; 8]
-) -> Field {
-    let mut current = leaf;
-    let mut idx = index as u64;
+fn limb_to_bytes_be(limb: u128) -> [u8; 16] {
+    let mut out: [u8; 16] = [0u8; 16];
+    let mut v = limb;
+    for i in 0..16 {
+        out[15 - i] = (v & 0xff) as u8;
+        v = v >> 8;
+    }
+    out
+}
 
-    for i in 0..8 {
-        let sibling = path[i];
+fn serialize_rsa_key(modulus_limbs: [u128; 18], exponent: u32) -> [u8; 292] {
+    let mut out: [u8; 292] = [0u8; 292];
 
-        // Determine if current is left or right child
-        let is_right = (idx & 1) != 0;
-
-        current = if is_right {
-            std::hash::pedersen_hash([sibling, current])
-        } else {
-            std::hash::pedersen_hash([current, sibling])
-        };
-
-        // Move to parent node
-        idx = idx >> 1;
+    for i in 0..18 {
+        let limb_bytes = limb_to_bytes_be(modulus_limbs[i]);
+        let base = i * 16;
+        for j in 0..16 {
+            out[base + j] = limb_bytes[j];
+        }
     }
 
-    current
+    out[288] = (exponent >> 24) as u8;
+    out[289] = (exponent >> 16) as u8;
+    out[290] = (exponent >> 8) as u8;
+    out[291] = exponent as u8;
+
+    out
 }

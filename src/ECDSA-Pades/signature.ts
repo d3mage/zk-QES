@@ -29,9 +29,11 @@ function extractCMSfromPDF(pdfBuffer: Buffer): Buffer | null {
 
 function parseCMSWithPKIjs(cmsBuffer: Buffer): {
     signedAttrsHash: Buffer;
+    signedAttrsDer: Buffer;
     signature: SignatureData;
     certificate: Buffer;
     publicKey: PublicKeyData;
+    publicKeyFingerprintBytes: Buffer;
 } {
     const asn1 = asn1js.fromBER(cmsBuffer);
     if (asn1.offset === -1) {
@@ -53,6 +55,7 @@ function parseCMSWithPKIjs(cmsBuffer: Buffer): {
         ),
     });
     const signedAttrsForSigning = attrsForSigning.toBER();
+    const signedAttrsDer = Buffer.from(signedAttrsForSigning);
     const signedAttrsHash = Buffer.from(sha256(new Uint8Array(signedAttrsForSigning)));
 
     const signatureValue = Buffer.from(signerInfo.signature.valueBlock.valueHex);
@@ -95,12 +98,15 @@ function parseCMSWithPKIjs(cmsBuffer: Buffer): {
 
     const pubX = pubKeyBytes.slice(1, 33);
     const pubY = pubKeyBytes.slice(33, 65);
+    const publicKeyFingerprintBytes = Buffer.concat([pubX, pubY]);
 
     return {
         signedAttrsHash,
+        signedAttrsDer,
         signature: { r, s },
         certificate: certDer,
         publicKey: { x: pubX, y: pubY },
+        publicKeyFingerprintBytes,
     };
 }
 
@@ -113,6 +119,8 @@ export async function extractSignatureFromPDF(
     publicKey: PublicKeyData;
     certificate: Buffer;
     signedAttrsHash: Buffer;
+    signedAttrsDer: Buffer;
+    publicKeyFingerprintBytes: Buffer;
 }> {
     const cmsBuffer = extractCMSfromPDF(pdfBuffer);
     if (!cmsBuffer) {
@@ -121,7 +129,8 @@ export async function extractSignatureFromPDF(
 
     console.log(`CMS length: ${cmsBuffer.length} bytes`);
 
-    const { signedAttrsHash, signature, certificate, publicKey } = parseCMSWithPKIjs(cmsBuffer);
+    const { signedAttrsHash, signedAttrsDer, signature, certificate, publicKey, publicKeyFingerprintBytes } =
+        parseCMSWithPKIjs(cmsBuffer);
 
     console.log(`  r (32 bytes): ${signature.r.toString('hex')}`);
     console.log(`  s (32 bytes): ${signature.s.toString('hex')}`);
@@ -135,6 +144,7 @@ export async function extractSignatureFromPDF(
         const pubkeyJsonPath = path.join(outDir, 'pubkey.json');
         const certDerPath = path.join(outDir, 'cert.der');
         const signedAttrsHashPath = path.join(outDir, 'signed_attrs_hash.bin');
+        const signedAttrsDerPath = path.join(outDir, 'signed_attrs.der');
 
         fs.writeFileSync(
             sigJsonPath,
@@ -163,12 +173,14 @@ export async function extractSignatureFromPDF(
 
         fs.writeFileSync(certDerPath, certificate);
         fs.writeFileSync(signedAttrsHashPath, signedAttrsHash);
+        fs.writeFileSync(signedAttrsDerPath, signedAttrsDer);
 
         console.log(`\nOutputs written:`);
         console.log(`  ${sigJsonPath}`);
         console.log(`  ${pubkeyJsonPath}`);
         console.log(`  ${certDerPath}`);
         console.log(`  ${signedAttrsHashPath}`);
+        console.log(`  ${signedAttrsDerPath}`);
     }
 
     return {
@@ -176,5 +188,7 @@ export async function extractSignatureFromPDF(
         publicKey: publicKey,
         certificate,
         signedAttrsHash,
+        signedAttrsDer,
+        publicKeyFingerprintBytes,
     };
 }

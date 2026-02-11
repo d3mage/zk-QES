@@ -11,6 +11,7 @@ import type { ProofResult } from './runner.ts';
 export interface CommonPreparationResult {
     doc_hash: Uint8Array;
     signed_attrs_hash: Uint8Array;
+    signed_attrs_der: Uint8Array;
     certificate: Buffer;
     signer_fpr_hex: string;
     signer_fpr: string;
@@ -19,9 +20,14 @@ export interface CommonPreparationResult {
     index: string;
 }
 
+// Keep in sync with Noir circuits (MAX_SIGNED_ATTRS_LEN)
+export const MAX_SIGNED_ATTRS_LEN = 512;
+
 type ExtractedData<Extra extends object> = {
     signedAttrsHash: Buffer;
+    signedAttrsDer: Buffer;
     certificate: Buffer;
+    publicKeyFingerprintBytes: Buffer;
 } & Extra;
 
 export async function prepareCommon<Extra extends object>(args: {
@@ -76,7 +82,7 @@ export async function prepareCommon<Extra extends object>(args: {
     const extracted = await extract(pdfBuffer, outDir, isDump);
 
     console.log('\n[3/5] Computing signer fingerprint...');
-    const signer_fpr_bytes = sha256(extracted.certificate);
+    const signer_fpr_bytes = sha256(extracted.publicKeyFingerprintBytes);
     const signer_fpr_hex = Buffer.from(signer_fpr_bytes).toString('hex');
     const signer_fpr_raw = BigInt(`0x${signer_fpr_hex}`);
     const signer_fpr = (signer_fpr_raw % FIELD_MODULUS).toString();
@@ -106,11 +112,12 @@ export async function prepareCommon<Extra extends object>(args: {
         fs.writeFileSync(path.join(pathsPoseidonDir, `${signer_fpr_hex}.json`), JSON.stringify(signerProof, null, 2));
     }
 
-    const { signedAttrsHash, certificate, ...rest } = extracted;
+    const { signedAttrsHash, signedAttrsDer, certificate, ...rest } = extracted;
 
     return {
         doc_hash,
         signed_attrs_hash: new Uint8Array(signedAttrsHash),
+        signed_attrs_der: new Uint8Array(signedAttrsDer),
         certificate,
         signer_fpr_hex,
         signer_fpr,
@@ -118,7 +125,7 @@ export async function prepareCommon<Extra extends object>(args: {
         merkle_path: signerProof.merkle_path_decimal,
         index: signerProof.index.toString(),
         ...rest,
-    };
+};
 }
 
 export function padMerklePath(merklePath: string[], depth = 8): string[] {
@@ -126,6 +133,15 @@ export function padMerklePath(merklePath: string[], depth = 8): string[] {
     while (padded.length < depth) {
         padded.push('0');
     }
+    return padded;
+}
+
+export function padBytes(bytes: Uint8Array, length: number): Uint8Array {
+    if (bytes.length > length) {
+        throw new Error(`Byte array too long: ${bytes.length} > ${length}`);
+    }
+    const padded = new Uint8Array(length);
+    padded.set(bytes, 0);
     return padded;
 }
 

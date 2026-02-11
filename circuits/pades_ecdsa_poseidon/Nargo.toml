@@ -2,7 +2,8 @@
 name = "pades_ecdsa_poseidon"
 type = "bin"
 authors = [""]
-compiler_version = ">=0.18.0"
+compiler_version = ">=0.35.0"
 
 [dependencies]
+pades_common = { path = "../pades_common" }
 poseidon = { git = "https://github.com/noir-lang/poseidon/", tag = "v0.1.1" }

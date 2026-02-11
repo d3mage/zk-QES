@@ -3,6 +3,7 @@ import path from 'node:path';
 import * as asn1js from 'asn1js';
 import * as pkijs from 'pkijs';
 import { sha256 } from '../common/utils.ts';
+import { modulusToLimbsBigint, serializeRsaFingerprintBytes } from '../common/rsa.ts';
 
 interface RsaSignatureData {
     signature: Buffer; // raw RSA signature bytes (big-endian integer)
@@ -28,9 +29,11 @@ function extractCMSfromPDF(pdfBuffer: Buffer): Buffer | null {
 
 function parseCMSWithPKIjsRSA(cmsBuffer: Buffer): {
     signedAttrsHash: Buffer;
+    signedAttrsDer: Buffer;
     signature: RsaSignatureData;
     certificate: Buffer;
     publicKey: RsaPublicKeyData;
+    publicKeyFingerprintBytes: Buffer;
 } {
     const asn1 = asn1js.fromBER(cmsBuffer);
     if (asn1.offset === -1) {
@@ -54,6 +57,7 @@ function parseCMSWithPKIjsRSA(cmsBuffer: Buffer): {
     });
 
     const signedAttrsForSigning = attrsForSigning.toBER();
+    const signedAttrsDer = Buffer.from(signedAttrsForSigning);
     const signedAttrsHash = Buffer.from(sha256(new Uint8Array(signedAttrsForSigning)));
 
     // In CMS for RSA, signatureValue is already the raw signature bytes
@@ -101,12 +105,16 @@ function parseCMSWithPKIjsRSA(cmsBuffer: Buffer): {
     const e = Number(eBigInt);
 
     const publicKey: RsaPublicKeyData = { n, e };
+    const limbs = modulusToLimbsBigint(n);
+    const publicKeyFingerprintBytes = Buffer.from(serializeRsaFingerprintBytes(limbs, e));
 
     return {
         signedAttrsHash,
+        signedAttrsDer,
         signature,
         certificate: certDer,
         publicKey,
+        publicKeyFingerprintBytes,
     };
 }
 
@@ -119,6 +127,8 @@ export async function extractRsaSignatureFromPDF(
     publicKey: RsaPublicKeyData;
     certificate: Buffer;
     signedAttrsHash: Buffer;
+    signedAttrsDer: Buffer;
+    publicKeyFingerprintBytes: Buffer;
 }> {
     const cmsBuffer = extractCMSfromPDF(pdfBuffer);
     if (!cmsBuffer) {
@@ -127,7 +137,8 @@ export async function extractRsaSignatureFromPDF(
 
     console.log(`CMS length: ${cmsBuffer.length} bytes`);
 
-    const { signedAttrsHash, signature, certificate, publicKey } = parseCMSWithPKIjsRSA(cmsBuffer);
+    const { signedAttrsHash, signedAttrsDer, signature, certificate, publicKey, publicKeyFingerprintBytes } =
+        parseCMSWithPKIjsRSA(cmsBuffer);
 
     console.log(`  signature (${signature.signature.length} bytes): ${signature.signature.toString('hex')}`);
     console.log(`\nCertificate extracted (${certificate.length} bytes)`);
@@ -144,6 +155,7 @@ export async function extractRsaSignatureFromPDF(
         const pubkeyJsonPath = path.join(outDir, 'pubkey-rsa.json');
         const certDerPath = path.join(outDir, 'cert-rsa.der');
         const signedAttrsHashPath = path.join(outDir, 'signed_attrs_hash-rsa.bin');
+        const signedAttrsDerPath = path.join(outDir, 'signed_attrs-rsa.der');
 
         fs.writeFileSync(
             sigJsonPath,
@@ -171,12 +183,14 @@ export async function extractRsaSignatureFromPDF(
 
         fs.writeFileSync(certDerPath, certificate);
         fs.writeFileSync(signedAttrsHashPath, signedAttrsHash);
+        fs.writeFileSync(signedAttrsDerPath, signedAttrsDer);
 
         console.log('\nOutputs written:');
         console.log(`  ${sigJsonPath}`);
         console.log(`  ${pubkeyJsonPath}`);
         console.log(`  ${certDerPath}`);
         console.log(`  ${signedAttrsHashPath}`);
+        console.log(`  ${signedAttrsDerPath}`);
     }
 
     return {
@@ -184,5 +198,7 @@ export async function extractRsaSignatureFromPDF(
         publicKey,
         certificate,
         signedAttrsHash,
+        signedAttrsDer,
+        publicKeyFingerprintBytes,
     };
 }

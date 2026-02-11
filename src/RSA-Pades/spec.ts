@@ -6,8 +6,10 @@ import { extractRsaSignatureFromPDF } from './signature.ts';
 import type { RunSpec, ProofResult } from '../common/runner.ts';
 import {
     type CommonPreparationResult,
+    MAX_SIGNED_ATTRS_LEN,
     padMerklePath,
     prepareCommon,
+    padBytes,
     verifyProofCommon,
     writeProofArtifacts
 } from '../common/pades.ts';
@@ -124,7 +126,9 @@ async function preparePDF(
 
             return {
                 signedAttrsHash: extractedData.signedAttrsHash,
+                signedAttrsDer: extractedData.signedAttrsDer,
                 certificate: extractedData.certificate,
+                publicKeyFingerprintBytes: extractedData.publicKeyFingerprintBytes,
                 pub_key_n,
                 exponent: extractedData.publicKey.e,
                 signature: new Uint8Array(signatureBytes),
@@ -171,11 +175,16 @@ async function generateProof(
     console.log('\n=== Proof Generation Phase ===\n');
 
     const signed_attrs_hash = prep.signed_attrs_hash;
+    const signed_attrs_der = padBytes(prep.signed_attrs_der, MAX_SIGNED_ATTRS_LEN);
+    const signed_attrs_len = prep.signed_attrs_der.length;
 
     const merkle_path = padMerklePath(prep.merkle_path, 8);
 
     const noirInputs = {
+        doc_hash: Array.from(prep.doc_hash),
         signed_attrs_hash: Array.from(signed_attrs_hash),
+        signed_attrs: Array.from(signed_attrs_der),
+        signed_attrs_len,
         modulus_limbs: prep.modulus_limbs,
         redc_limbs: prep.redc_limbs,
         signature_bytes: Array.from(prep.signature),
@@ -187,7 +196,9 @@ async function generateProof(
     };
 
     console.log('Inputs:');
+    console.log(`  doc_hash: ${Buffer.from(prep.doc_hash).toString('hex')}`);
     console.log(`  signed_attrs_hash: ${Buffer.from(noirInputs.signed_attrs_hash).toString('hex')}`);
+    console.log(`  signed_attrs_len: ${signed_attrs_len}`);
     console.log(`  modulus_limbs[0]: ${noirInputs.modulus_limbs[0]}`);
     console.log(`  modulus_limbs[17]: ${noirInputs.modulus_limbs[17]}`);
     console.log(`  redc_limbs[0]: ${noirInputs.redc_limbs[0]}`);
