@@ -1,31 +1,40 @@
 {
-  "name": "zk-qualified-signature",
-  "version": "0.1.0",
-  "main": "index.js",
-  "license": "MIT",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "clean": "rm -rf src/ECDSA-Pades/out*"
-  },
-  "dependencies": {
-    "@aztec/bb.js": "3.0.0-nightly.20251114",
-    "@noir-lang/noir_js": "1.0.0-beta.15",
-    "@peculiar/asn1-cms": "^2.3.8",
-    "@peculiar/asn1-schema": "^2.3.8",
-    "@peculiar/asn1-x509": "^2.3.8",
-    "asn1js": "^3.0.6",
-    "dotenv": "^17.2.2",
-    "node-forge": "^1.3.1",
-    "pedersen-fast": "^0.4.0",
-    "pkijs": "^3.3.1",
-    "poseidon-lite": "^0.3.0"
-  },
-  "devDependencies": {
-    "@types/node": "^22.15.1",
-    "@types/node-forge": "^1.3.14",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.4.4"
-  },
-  "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
+    "name": "zk-qualified-signature",
+    "version": "0.1.0",
+    "main": "index.js",
+    "license": "MIT",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "clean": "rm -rf src/ECDSA-Pades/out*",
+        "compile:circuits": "nargo compile --program-dir circuits/pades_ecdsa_pedersen && nargo compile --program-dir circuits/pades_ecdsa_poseidon && nargo compile --program-dir circuits/pades_rsa",
+        "lint": "biome lint .",
+        "lint:fix": "biome lint --write .",
+        "format": "biome format .",
+        "format:write": "biome format --write .",
+        "test": "bun test",
+        "test:ecdsa": "bun test tests/ecdsa.test.ts",
+        "test:rsa": "bun test tests/rsa.test.ts"
+    },
+    "dependencies": {
+        "@aztec/bb.js": "3.0.0-nightly.20251114",
+        "@noir-lang/noir_js": "1.0.0-beta.15",
+        "@peculiar/asn1-cms": "^2.3.8",
+        "@peculiar/asn1-schema": "^2.3.8",
+        "@peculiar/asn1-x509": "^2.3.8",
+        "asn1js": "^3.0.6",
+        "dotenv": "^17.2.2",
+        "node-forge": "^1.3.1",
+        "pedersen-fast": "^0.4.0",
+        "pkijs": "^3.3.1",
+        "poseidon-lite": "^0.3.0"
+    },
+    "devDependencies": {
+        "@biomejs/biome": "^2.3.14",
+        "@types/node": "^22.15.1",
+        "@types/node-forge": "^1.3.14",
+        "ts-node": "^10.9.2",
+        "typescript": "^5.4.4"
+    },
+    "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
 }

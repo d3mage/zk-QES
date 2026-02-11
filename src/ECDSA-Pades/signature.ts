@@ -48,7 +48,9 @@ function parseCMSWithPKIjs(cmsBuffer: Buffer): {
     }
 
     const attrsForSigning = new asn1js.Set({
-        value: signerInfo.signedAttrs.attributes.map((attr: any) => attr.toSchema())
+        value: (signerInfo.signedAttrs.attributes as Array<{ toSchema(): asn1js.BaseBlock }>).map((attr) =>
+            attr.toSchema(),
+        ),
     });
     const signedAttrsForSigning = attrsForSigning.toBER();
     const signedAttrsHash = Buffer.from(sha256(new Uint8Array(signedAttrsForSigning)));
@@ -98,11 +100,15 @@ function parseCMSWithPKIjs(cmsBuffer: Buffer): {
         signedAttrsHash,
         signature: { r, s },
         certificate: certDer,
-        publicKey: { x: pubX, y: pubY }
+        publicKey: { x: pubX, y: pubY },
     };
 }
 
-export async function extractSignatureFromPDF(pdfBuffer: Buffer, outDir: string, isDump: boolean = false): Promise<{
+export async function extractSignatureFromPDF(
+    pdfBuffer: Buffer,
+    outDir: string,
+    isDump: boolean = false,
+): Promise<{
     signature: SignatureData;
     publicKey: PublicKeyData;
     certificate: Buffer;
@@ -122,7 +128,7 @@ export async function extractSignatureFromPDF(pdfBuffer: Buffer, outDir: string,
     console.log(`\nCertificate extracted (${certificate.length} bytes)`);
     console.log(`  x (32 bytes): ${publicKey.x.toString('hex')}`);
     console.log(`  y (32 bytes): ${publicKey.y.toString('hex')}`);
-    console.log(`\nSigned Attrs Hash: ${signedAttrsHash.toString('hex')}`);
+    console.log(`\nSigned attrs hash: ${signedAttrsHash.toString('hex')}`);
 
     if (isDump) {
         const sigJsonPath = path.join(outDir, 'sig.json');
@@ -130,16 +136,30 @@ export async function extractSignatureFromPDF(pdfBuffer: Buffer, outDir: string,
         const certDerPath = path.join(outDir, 'cert.der');
         const signedAttrsHashPath = path.join(outDir, 'signed_attrs_hash.bin');
 
-        fs.writeFileSync(sigJsonPath, JSON.stringify({
-            r: signature.r.toString('hex'),
-            s: signature.s.toString('hex'),
-            signature: Buffer.concat([signature.r, signature.s]).toString('hex')
-        }, null, 2));
+        fs.writeFileSync(
+            sigJsonPath,
+            JSON.stringify(
+                {
+                    r: signature.r.toString('hex'),
+                    s: signature.s.toString('hex'),
+                    signature: Buffer.concat([signature.r, signature.s]).toString('hex'),
+                },
+                null,
+                2,
+            ),
+        );
 
-        fs.writeFileSync(pubkeyJsonPath, JSON.stringify({
-            x: publicKey.x.toString('hex'),
-            y: publicKey.y.toString('hex')
-        }, null, 2));
+        fs.writeFileSync(
+            pubkeyJsonPath,
+            JSON.stringify(
+                {
+                    x: publicKey.x.toString('hex'),
+                    y: publicKey.y.toString('hex'),
+                },
+                null,
+                2,
+            ),
+        );
 
         fs.writeFileSync(certDerPath, certificate);
         fs.writeFileSync(signedAttrsHashPath, signedAttrsHash);
@@ -155,6 +175,6 @@ export async function extractSignatureFromPDF(pdfBuffer: Buffer, outDir: string,
         signature,
         publicKey: publicKey,
         certificate,
-        signedAttrsHash
+        signedAttrsHash,
     };
 }

@@ -1,4 +1,4 @@
-import crypto from 'crypto';
+import crypto from 'node:crypto';
 import { FIELD_MODULUS } from './constants.ts';
 
 export function sha256(buf: Uint8Array): Uint8Array {
@@ -9,7 +9,7 @@ export function sha256(buf: Uint8Array): Uint8Array {
 // Applies modulo to handle SHA-256 hashes that exceed BN254 field modulus
 export function hexToField(hex: string): bigint {
     const cleanHex = hex.startsWith('0x') ? hex.slice(2) : hex;
-    const value = BigInt('0x' + cleanHex);
+    const value = BigInt(`0x${cleanHex}`);
     // Apply modulo to ensure value fits in field
     return value % FIELD_MODULUS;
 }
@@ -29,7 +29,7 @@ export function bigintToUint8Array(value: bigint): Uint8Array {
     const bytes = new Uint8Array(32);
     let num = value;
     for (let i = 31; i >= 0; i--) {
-        bytes[i] = Number(num & 0xFFn);
+        bytes[i] = Number(num & 0xffn);
         num = num >> 8n;
     }
     return bytes;

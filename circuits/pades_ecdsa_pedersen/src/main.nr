@@ -1,23 +1,21 @@
 use dep::std::ecdsa_secp256r1::verify_signature;
 
 fn main(
-    doc_hash: pub [u8; 32],           // SHA-256 digest of PDF ByteRange
-
-    // Signer identity (public)
-    pub_key_x: pub [u8; 32],          // Public key X coordinate (big-endian)
-    pub_key_y: pub [u8; 32],          // Public key Y coordinate (big-endian)
-
-    signer_fpr: pub Field,            // Signer fingerprint as Field (Pedersen leaf)
+    // Public inputs
+    signed_attrs_hash: pub [u8; 32],  // SHA-256 digest of CMS SignedAttributes
     tl_root: pub Field,               // Merkle root of local allow-list (Pedersen hash)
 
     // Private inputs
+    pub_key_x: [u8; 32],              // Public key X coordinate (big-endian)
+    pub_key_y: [u8; 32],              // Public key Y coordinate (big-endian)
+    signer_fpr: Field,                // Signer fingerprint as Field (Pedersen leaf)
     signature: [u8; 64],              // Signature (r || s, big-endian)
     merkle_path: [Field; 8],          // Merkle inclusion path (depth 8, Pedersen hashes)
     index: Field,                     // Leaf index in local tree
 ) {
-    // 1. Verify ECDSA P-256 signature over doc_hash
+    // 1. Verify ECDSA P-256 signature over signed_attrs_hash
     // ECDSA still uses byte arrays (no change here)
-    let valid = verify_signature(pub_key_x, pub_key_y, signature, doc_hash);
+    let valid = verify_signature(pub_key_x, pub_key_y, signature, signed_attrs_hash);
     assert(valid, "ECDSA P-256 verification failed");
 
     // 2. Verify signer is in the local allow-list (Pedersen Merkle tree)

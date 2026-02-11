@@ -7,18 +7,18 @@ use dep::bignum::RuntimeBigNum;
 // Based on zkpassport/noir_rsa v0.9.2
 
 fn main(
-    // Document binding (public)
-    signed_attrs_hash: pub [u8; 32],           // SHA-256 digest of PDF ByteRange
+    // Public inputs
+    signed_attrs_hash: pub [u8; 32],   // SHA-256 digest of CMS SignedAttributes
+    tl_root: pub Field,                // Merkle root of local allow-list
+
+    // Private inputs
     modulus_limbs: [u128; 18],
     redc_limbs: [u128; 18],
-    signature_bytes: pub [u8; 256],
-    exponent: pub u32,                // RSA exponent (typically 65537)
-    // Trust list inputs (using Pedersen for efficiency)
-    signer_fpr: pub Field,            // Signer fingerprint as Field
-    tl_root: pub Field,               // Merkle root of local allow-list
-    // Private inputs for Merkle proofs
-    merkle_path: [Field; 8],          // Merkle inclusion path for local allow-list
-    index: Field,                     // Leaf index in local tree
+    signature_bytes: [u8; 256],
+    exponent: u32,                     // RSA exponent (typically 65537)
+    signer_fpr: Field,                 // Signer fingerprint as Field
+    merkle_path: [Field; 8],           // Merkle inclusion path for local allow-list
+    index: Field,                      // Leaf index in local tree
 ) {
     // Create BigNumParams for RSA-2048
     let params = BigNumParams::<18, 2048>::new(false, modulus_limbs, redc_limbs);

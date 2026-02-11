@@ -13,16 +13,14 @@ function parseByteRange(pdfBuffer: Buffer): number[] | null {
         return null;
     }
 
-    return [
-        parseInt(match[1], 10),
-        parseInt(match[2], 10),
-        parseInt(match[3], 10),
-        parseInt(match[4], 10)
-    ];
+    return [parseInt(match[1], 10), parseInt(match[2], 10), parseInt(match[3], 10), parseInt(match[4], 10)];
 }
 
-export async function getByteRangeHash(pdfBuffer: Buffer, isDump: boolean = false, outDir: string = 'out'): Promise<string> {
-
+export async function getByteRangeHash(
+    pdfBuffer: Buffer,
+    isDump: boolean = false,
+    outDir: string = 'out',
+): Promise<string> {
     const byteRange = parseByteRange(pdfBuffer);
     if (!byteRange) {
         throw new Error('Error: /ByteRange not found in PDF');
@@ -37,11 +35,11 @@ export async function getByteRangeHash(pdfBuffer: Buffer, isDump: boolean = fals
     const part2 = pdfBuffer.subarray(offset2, offset2 + length2);
 
     const combined = Buffer.concat([part1, part2]);
-    console.log(`Combined length: ${combined.length} bytes`);
+    console.log(`  Combined length: ${combined.length} bytes`);
 
     const digest = sha256(combined);
     const digestHex = Buffer.from(digest).toString('hex');
-    console.log(`\nSHA-256 digest: ${digestHex}`);
+    console.log(`  SHA-256 digest: ${digestHex}`);
 
     if (isDump) {
         const binPath = path.join(outDir, 'doc_hash.bin');

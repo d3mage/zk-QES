@@ -5,12 +5,12 @@ import * as pkijs from 'pkijs';
 import { sha256 } from '../common/utils.ts';
 
 interface RsaSignatureData {
-    signature: Buffer;    // raw RSA signature bytes (big-endian integer)
+    signature: Buffer; // raw RSA signature bytes (big-endian integer)
 }
 
 interface RsaPublicKeyData {
-    n: Buffer;            // modulus
-    e: number;            // public exponent as u32
+    n: Buffer; // modulus
+    e: number; // public exponent as u32
 }
 
 function extractCMSfromPDF(pdfBuffer: Buffer): Buffer | null {
@@ -26,9 +26,7 @@ function extractCMSfromPDF(pdfBuffer: Buffer): Buffer | null {
     return Buffer.from(hexStr, 'hex');
 }
 
-function parseCMSWithPKIjsRSA(
-    cmsBuffer: Buffer
-): {
+function parseCMSWithPKIjsRSA(cmsBuffer: Buffer): {
     signedAttrsHash: Buffer;
     signature: RsaSignatureData;
     certificate: Buffer;
@@ -50,18 +48,16 @@ function parseCMSWithPKIjsRSA(
 
     // Build the SET OF signed attributes exactly as they were encoded for signing
     const attrsForSigning = new asn1js.Set({
-        value: signerInfo.signedAttrs.attributes.map((attr: any) => attr.toSchema())
+        value: (signerInfo.signedAttrs.attributes as Array<{ toSchema(): asn1js.BaseBlock }>).map((attr) =>
+            attr.toSchema(),
+        ),
     });
 
     const signedAttrsForSigning = attrsForSigning.toBER();
-    const signedAttrsHash = Buffer.from(
-        sha256(new Uint8Array(signedAttrsForSigning))
-    );
+    const signedAttrsHash = Buffer.from(sha256(new Uint8Array(signedAttrsForSigning)));
 
     // In CMS for RSA, signatureValue is already the raw signature bytes
-    const signatureBytes = Buffer.from(
-        signerInfo.signature.valueBlock.valueHex
-    );
+    const signatureBytes = Buffer.from(signerInfo.signature.valueBlock.valueHex);
     const signature: RsaSignatureData = { signature: signatureBytes };
 
     if (!cmsContent.certificates || cmsContent.certificates.length === 0) {
@@ -73,16 +69,15 @@ function parseCMSWithPKIjsRSA(
 
     // Ensure this is an RSA key
     const algOid = cert.subjectPublicKeyInfo.algorithm.algorithmId;
-    if (algOid !== '1.2.840.113549.1.1.1') { // rsaEncryption
+    if (algOid !== '1.2.840.113549.1.1.1') {
+        // rsaEncryption
         throw new Error(`Not an RSA certificate (alg OID: ${algOid})`);
     }
 
     // subjectPublicKey is a BIT STRING containing an RSAPublicKey structure:
     // RSAPublicKey ::= SEQUENCE { modulus INTEGER, publicExponent INTEGER }
     const spki = cert.subjectPublicKeyInfo;
-    const pubAsn1 = asn1js.fromBER(
-        spki.subjectPublicKey.valueBlock.valueHex
-    );
+    const pubAsn1 = asn1js.fromBER(spki.subjectPublicKey.valueBlock.valueHex);
     if (pubAsn1.offset === -1) {
         throw new Error('Failed to parse RSA public key');
     }
@@ -99,7 +94,7 @@ function parseCMSWithPKIjsRSA(
         n = n.slice(1);
     }
 
-    const eBigInt = BigInt('0x' + eBuf.toString('hex'));
+    const eBigInt = BigInt(`0x${eBuf.toString('hex')}`);
     if (eBigInt > BigInt(0xffffffff)) {
         throw new Error(`RSA exponent too large for u32: ${eBigInt.toString(10)}`);
     }
@@ -111,14 +106,14 @@ function parseCMSWithPKIjsRSA(
         signedAttrsHash,
         signature,
         certificate: certDer,
-        publicKey
+        publicKey,
     };
 }
 
 export async function extractRsaSignatureFromPDF(
     pdfBuffer: Buffer,
     outDir: string,
-    isDump: boolean = false
+    isDump: boolean = false,
 ): Promise<{
     signature: RsaSignatureData;
     publicKey: RsaPublicKeyData;
@@ -132,20 +127,13 @@ export async function extractRsaSignatureFromPDF(
 
     console.log(`CMS length: ${cmsBuffer.length} bytes`);
 
-    const {
-        signedAttrsHash,
-        signature,
-        certificate,
-        publicKey
-    } = parseCMSWithPKIjsRSA(cmsBuffer);
+    const { signedAttrsHash, signature, certificate, publicKey } = parseCMSWithPKIjsRSA(cmsBuffer);
 
-    console.log(
-        `  signature (${signature.signature.length} bytes): ${signature.signature.toString('hex')}`
-    );
+    console.log(`  signature (${signature.signature.length} bytes): ${signature.signature.toString('hex')}`);
     console.log(`\nCertificate extracted (${certificate.length} bytes)`);
     console.log(`  n (modulus):  ${publicKey.n.toString('hex')}`);
     console.log(`  e (exponent): 0x${publicKey.e.toString(16)} (${publicKey.e})`);
-    console.log(`\nSigned Attrs Hash: ${signedAttrsHash.toString('hex')}`);
+    console.log(`\nSigned attrs hash: ${signedAttrsHash.toString('hex')}`);
 
     if (isDump) {
         if (!fs.existsSync(outDir)) {
@@ -161,11 +149,11 @@ export async function extractRsaSignatureFromPDF(
             sigJsonPath,
             JSON.stringify(
                 {
-                    signature: signature.signature.toString('hex')
+                    signature: signature.signature.toString('hex'),
                 },
                 null,
-                2
-            )
+                2,
+            ),
         );
 
         fs.writeFileSync(
@@ -173,12 +161,12 @@ export async function extractRsaSignatureFromPDF(
             JSON.stringify(
                 {
                     n: publicKey.n.toString('hex'),
-                    e_hex: '0x' + publicKey.e.toString(16),
-                    e_dec: publicKey.e.toString(10)
+                    e_hex: `0x${publicKey.e.toString(16)}`,
+                    e_dec: publicKey.e.toString(10),
                 },
                 null,
-                2
-            )
+                2,
+            ),
         );
 
         fs.writeFileSync(certDerPath, certificate);
@@ -195,6 +183,6 @@ export async function extractRsaSignatureFromPDF(
         signature,
         publicKey,
         certificate,
-        signedAttrsHash
+        signedAttrsHash,
     };
 }
